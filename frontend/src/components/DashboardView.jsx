@@ -29,7 +29,9 @@ import {
   Zap,
   Check,
   Calculator,
-  Target
+  Target,
+  Search,
+  X
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -40,13 +42,13 @@ import {
   Bar, 
   XAxis, 
   YAxis, 
-  Tooltip,
-  LineChart,
-  Line,
-  CartesianGrid,
-  AreaChart,
-  Area,
-  ReferenceLine
+  Tooltip, 
+  LineChart, 
+  Line, 
+  CartesianGrid, 
+  AreaChart, 
+  Area, 
+  ReferenceLine 
 } from 'recharts';
 
 export default function DashboardView({ 
@@ -59,6 +61,7 @@ export default function DashboardView({
   const [activeViewMode, setActiveViewMode] = useState('overview'); // 'overview' | 'balance_excel' | 'wealth'
   const [balanceMatrix, setBalanceMatrix] = useState(null);
   const [loadingMatrix, setLoadingMatrix] = useState(false);
+  const [matrixSearch, setMatrixSearch] = useState('');
 
   // Advanced analytics state for the selected month
   const [advancedData, setAdvancedData] = useState(null);
@@ -250,8 +253,67 @@ export default function DashboardView({
     document.body.removeChild(link);
   };
 
+  // Normalize string helper for diacritic-insensitive & case-insensitive search
+  const normalizeStr = (str) =>
+    (str || '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const searchNorm = normalizeStr(matrixSearch);
+
+  const filteredIncomeRows = useMemo(() => {
+    if (!balanceMatrix?.income?.rows) return [];
+    if (!searchNorm) return balanceMatrix.income.rows;
+    return balanceMatrix.income.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm)
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const filteredExpenseRows = useMemo(() => {
+    if (!balanceMatrix?.personal_expenses?.rows) return [];
+    if (!searchNorm) return balanceMatrix.personal_expenses.rows;
+    return balanceMatrix.personal_expenses.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm) ||
+      (r.category && normalizeStr(r.category).includes(searchNorm))
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const filteredCardRows = useMemo(() => {
+    if (!balanceMatrix?.card_settlements?.rows) return [];
+    if (!searchNorm) return balanceMatrix.card_settlements.rows;
+    return balanceMatrix.card_settlements.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm)
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const filteredTransferRows = useMemo(() => {
+    if (!balanceMatrix?.internal_transfers?.rows) return [];
+    if (!searchNorm) return balanceMatrix.internal_transfers.rows;
+    return balanceMatrix.internal_transfers.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm)
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const hasCompanyOutlaysMatch = useMemo(() => {
+    if (!balanceMatrix?.company_reimbursements?.has_data) return false;
+    if (!searchNorm) return true;
+    const name1 = normalizeStr(balanceMatrix.company_reimbursements.outlays?.name);
+    const name2 = normalizeStr(balanceMatrix.company_reimbursements.received?.name);
+    return name1.includes(searchNorm) || name2.includes(searchNorm) || 'empresa'.includes(searchNorm) || 'reembolsable'.includes(searchNorm);
+  }, [balanceMatrix, searchNorm]);
+
+  const totalMatchesCount =
+    filteredIncomeRows.length +
+    filteredExpenseRows.length +
+    filteredCardRows.length +
+    filteredTransferRows.length +
+    (hasCompanyOutlaysMatch && searchNorm ? 2 : 0);
+
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-12">
+    <div className={`${activeViewMode === 'balance_excel' ? 'w-full max-w-full px-1 sm:px-3' : 'max-w-6xl mx-auto'} space-y-6 pb-12 transition-all`}>
       {/* Page Header (Notion Style) */}
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -898,12 +960,17 @@ export default function DashboardView({
       {/* ============================================================== */}
       {activeViewMode === 'balance_excel' && (
         <div className="space-y-4">
-          {/* Toolbar */}
+          {/* 1. Header Toolbar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs">
             <div>
               <h2 className="text-base font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-indigo-500" />
+                <FileSpreadsheet className="w-5 h-5 text-indigo-500" />
                 <span>Hoja de Balance Mensual (Estilo Excel)</span>
+                {balanceMatrix?.months && (
+                  <span className="ml-1 text-[11px] px-2 py-0.5 rounded-full bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 font-mono font-medium border border-neutral-200 dark:border-neutral-700">
+                    {balanceMatrix.months.length} meses
+                  </span>
+                )}
               </h2>
               <p className="text-xs text-neutral-500 mt-0.5">
                 Visión comparativa completa mes a mes: ingresos, gastos clasificados, liquidaciones de tarjeta y saldo neto
@@ -920,28 +987,166 @@ export default function DashboardView({
             </button>
           </div>
 
+          {/* 2. Top Search Bar & Quick Filters Bar (Parte Superior) */}
+          <div className="p-4 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              {/* High-Contrast Search Input */}
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={matrixSearch}
+                  onChange={(e) => setMatrixSearch(e.target.value)}
+                  placeholder="Buscar partida, gasto o ingreso en el balance (ej: Coche, Gasolina, Nómina, Alquiler, Restaurantes...)"
+                  className="w-full pl-10 pr-10 py-2.5 text-sm font-medium bg-neutral-50 dark:bg-[#181818] border border-neutral-300 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-neutral-50 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:bg-white dark:focus:bg-[#222222] focus:border-indigo-500 dark:focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-inner"
+                  autoComplete="off"
+                />
+                {matrixSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setMatrixSearch('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+                    title="Limpiar búsqueda"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Match Counter Badge */}
+              {matrixSearch && (
+                <div className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40 whitespace-nowrap">
+                  <span>{totalMatchesCount} {totalMatchesCount === 1 ? 'partida coincidente' : 'partidas coincidentes'}</span>
+                  <button
+                    onClick={() => setMatrixSearch('')}
+                    className="text-xs text-indigo-500 hover:text-indigo-700 underline font-normal cursor-pointer ml-1"
+                  >
+                    Ver todas
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Filter Tag Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-neutral-100 dark:border-neutral-800/70 text-xs">
+              <span className="text-neutral-400 text-[11px] font-medium mr-1">Filtros rápidos:</span>
+              {[
+                { label: 'Todo', query: '' },
+                { label: '🚗 Coche', query: 'coche' },
+                { label: '⛽ Gasolina', query: 'gasolina' },
+                { label: '🏠 Alquiler / Hogar', query: 'hogar' },
+                { label: '🛒 Supermercado', query: 'supermercado' },
+                { label: '🍽️ Restaurantes', query: 'restaurante' },
+                { label: '💼 Nómina', query: 'nómina' },
+                { label: '💳 Tarjetas', query: 'tarjeta' },
+                { label: '🔄 Traspasos', query: 'traspaso' }
+              ].map((pill) => {
+                const isSelected = (!matrixSearch && !pill.query) || (matrixSearch.toLowerCase() === pill.query.toLowerCase());
+                return (
+                  <button
+                    key={pill.label}
+                    type="button"
+                    onClick={() => setMatrixSearch(pill.query)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white shadow-2xs font-semibold'
+                        : 'bg-neutral-100 dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+                    }`}
+                  >
+                    {pill.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 3. Executive KPI Metric Strip (Aprovechar espacios en blanco horizontalmente) */}
+          {balanceMatrix && balanceMatrix.income && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {/* Total Ingresos */}
+              <div className="p-3.5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="font-medium">Total Ingresos ({balanceMatrix.months.length}m)</span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                </div>
+                <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                  {balanceMatrix.income.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                </div>
+                <div className="text-[11px] text-neutral-400 font-mono">
+                  Media: {balanceMatrix.income.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
+                </div>
+              </div>
+
+              {/* Gastos Personales */}
+              <div className="p-3.5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="font-medium">Gastos Personales Reales</span>
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                </div>
+                <div className="text-lg font-bold text-rose-600 dark:text-rose-400 font-mono">
+                  {balanceMatrix.personal_expenses.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                </div>
+                <div className="text-[11px] text-neutral-400 font-mono">
+                  Media: {balanceMatrix.personal_expenses.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
+                </div>
+              </div>
+
+              {/* Ahorro Neto Total */}
+              <div className="p-3.5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="font-medium">Ahorro Neto Acumulado</span>
+                  <span className={`w-2 h-2 rounded-full ${balanceMatrix.results.net_savings.total >= 0 ? 'bg-indigo-500' : 'bg-amber-500'}`} />
+                </div>
+                <div className={`text-lg font-bold font-mono ${balanceMatrix.results.net_savings.total >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                  {balanceMatrix.results.net_savings.total >= 0 ? '+' : ''}{balanceMatrix.results.net_savings.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                </div>
+                <div className="text-[11px] text-neutral-400 font-mono">
+                  Media: {balanceMatrix.results.net_savings.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
+                </div>
+              </div>
+
+              {/* Tasa Media de Ahorro */}
+              <div className="p-3.5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
+                  <span className="font-medium">Tasa Media de Ahorro</span>
+                  <span className="text-[11px] text-indigo-500 font-semibold">% retención</span>
+                </div>
+                <div className="text-lg font-bold text-neutral-900 dark:text-white font-mono">
+                  {balanceMatrix.results.savings_rate.average}%
+                </div>
+                <div className="text-[11px] text-neutral-400">
+                  {balanceMatrix.personal_expenses.rows.length} categorías de consumo
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 4. Full-Width Wide Table (Hacer la tabla más ancha y espaciosa) */}
           {loadingMatrix || !balanceMatrix ? (
-            <div className="p-12 text-center text-xs text-neutral-400">
+            <div className="p-12 text-center text-xs text-neutral-400 bg-white dark:bg-[#202020] rounded-xl border border-neutral-200 dark:border-neutral-800">
               Cargando matriz financiera...
             </div>
           ) : (
             <div className="bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 rounded-xl shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse font-sans min-w-[850px]">
-                  <thead>
-                    <tr className="bg-neutral-100/90 dark:bg-neutral-800/80 border-b border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-semibold text-[11px] whitespace-nowrap">
-                      <th className="py-3 px-3.5 min-w-[220px] sticky left-0 bg-neutral-100/90 dark:bg-neutral-800/80 z-10 shadow-r">
-                        Concepto / Partida
+                <table className="w-full text-left text-xs border-collapse font-sans min-w-[1100px]">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-neutral-100/95 dark:bg-[#282828] border-b border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 font-semibold text-[11px] whitespace-nowrap">
+                      <th className="py-3 px-4 min-w-[280px] xl:min-w-[340px] sticky left-0 bg-neutral-100/95 dark:bg-[#282828] z-30 border-r border-neutral-200/80 dark:border-neutral-700 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-neutral-800 dark:text-neutral-100 uppercase tracking-wider text-[10.5px]">Concepto / Partida</span>
+                          <span className="text-[10px] text-neutral-400 font-mono">({balanceMatrix.personal_expenses.rows.length} categorías)</span>
+                        </div>
                       </th>
                       {balanceMatrix.months.map(m => (
-                        <th key={m} className="py-3 px-3 text-right font-mono min-w-[95px]">
+                        <th key={m} className="py-3 px-3.5 text-right font-mono min-w-[110px] xl:min-w-[125px]">
                           {m}
                         </th>
                       ))}
-                      <th className="py-3 px-3 text-right font-mono min-w-[105px] bg-neutral-200/40 dark:bg-neutral-700/40">
+                      <th className="py-3 px-3.5 text-right font-mono min-w-[120px] xl:min-w-[135px] bg-neutral-200/40 dark:bg-neutral-700/40 font-semibold">
                         Media Mensual
                       </th>
-                      <th className="py-3 px-3.5 text-right font-mono min-w-[115px] bg-neutral-200/70 dark:bg-neutral-700/70 font-bold">
+                      <th className="py-3 px-4 text-right font-mono min-w-[135px] xl:min-w-[150px] bg-neutral-200/70 dark:bg-neutral-700/70 font-bold">
                         Total ({balanceMatrix.months.length} Meses)
                       </th>
                     </tr>
@@ -949,160 +1154,187 @@ export default function DashboardView({
 
                   <tbody className="divide-y divide-neutral-150 dark:divide-neutral-800 text-[11.5px]">
                     {/* SECTION 1: INGRESOS */}
-                    <tr className="bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-300 font-bold text-xs">
-                      <td colSpan={balanceMatrix.months.length + 3} className="py-2 px-3.5 tracking-wide uppercase text-[10.5px]">
-                        🟢 1. Ingresos
-                      </td>
-                    </tr>
-                    {balanceMatrix.income.rows.map(r => (
-                      <tr key={r.name} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40">
-                        <td className="py-2 px-3.5 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] z-10">
-                          {r.name}
-                        </td>
-                        {balanceMatrix.months.map(m => (
-                          <td key={m} className="py-2 px-3 text-right font-mono text-neutral-700 dark:text-neutral-300">
-                            {r.by_month[m] ? `${r.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
-                          </td>
-                        ))}
-                        <td className="py-2 px-3 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
-                          {r.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                        <td className="py-2 px-3.5 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
-                          {r.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                      </tr>
-                    ))}
-                    {/* Total Income Row */}
-                    <tr className="bg-emerald-50/40 dark:bg-emerald-950/10 font-bold border-t-2 border-emerald-300/80 dark:border-emerald-800/60">
-                      <td className="py-2.5 px-3.5 text-emerald-900 dark:text-emerald-300 sticky left-0 bg-emerald-50/40 dark:bg-[#202020] z-10">
-                        {balanceMatrix.income.total.name}
-                      </td>
-                      {balanceMatrix.months.map(m => (
-                        <td key={m} className="py-2.5 px-3 text-right font-mono text-emerald-700 dark:text-emerald-400">
-                          {balanceMatrix.income.total.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                      ))}
-                      <td className="py-2.5 px-3 text-right font-mono bg-emerald-100/30 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300">
-                        {balanceMatrix.income.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                      <td className="py-2.5 px-3.5 text-right font-mono bg-emerald-100/50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200">
-                        {balanceMatrix.income.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                    </tr>
-
-                    {/* SECTION 2: GASTOS PERSONALES REALES */}
-                    <tr className="bg-rose-50/70 dark:bg-rose-950/20 text-rose-900 dark:text-rose-300 font-bold text-xs">
-                      <td colSpan={balanceMatrix.months.length + 3} className="py-2 px-3.5 tracking-wide uppercase text-[10.5px]">
-                        🔴 2. Gastos Personales Reales (Consumo)
-                      </td>
-                    </tr>
-                    {balanceMatrix.personal_expenses.rows.map(r => (
-                      <tr key={r.name} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40">
-                        <td className="py-2 px-3.5 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] z-10 flex items-center justify-between">
-                          <span>{r.name}</span>
-                          <span className="text-[10px] text-neutral-400 font-mono">({r.percentage}%)</span>
-                        </td>
-                        {balanceMatrix.months.map(m => (
-                          <td key={m} className="py-2 px-3 text-right font-mono text-neutral-700 dark:text-neutral-300">
-                            {r.by_month[m] ? `${r.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
-                          </td>
-                        ))}
-                        <td className="py-2 px-3 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
-                          {r.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                        <td className="py-2 px-3.5 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
-                          {r.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                      </tr>
-                    ))}
-                    {/* Total Personal Expenses Row */}
-                    <tr className="bg-rose-50/40 dark:bg-rose-950/10 font-bold border-t-2 border-rose-300/80 dark:border-rose-800/60">
-                      <td className="py-2.5 px-3.5 text-rose-900 dark:text-rose-300 sticky left-0 bg-rose-50/40 dark:bg-[#202020] z-10">
-                        {balanceMatrix.personal_expenses.total.name}
-                      </td>
-                      {balanceMatrix.months.map(m => (
-                        <td key={m} className="py-2.5 px-3 text-right font-mono text-rose-600 dark:text-rose-400">
-                          {balanceMatrix.personal_expenses.total.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                      ))}
-                      <td className="py-2.5 px-3 text-right font-mono bg-rose-100/30 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300">
-                        {balanceMatrix.personal_expenses.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                      <td className="py-2.5 px-3.5 text-right font-mono bg-rose-100/50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200">
-                        {balanceMatrix.personal_expenses.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                    </tr>
-
-                    {/* SECTION 3: LIQUIDACIÓN DE TARJETAS */}
-                    <tr className="bg-purple-50/70 dark:bg-purple-950/20 text-purple-900 dark:text-purple-300 font-bold text-xs">
-                      <td colSpan={balanceMatrix.months.length + 3} className="py-2 px-3.5 tracking-wide uppercase text-[10.5px] flex items-center justify-between">
-                        <span>💳 3. Liquidación Tarjetas (Informativo — Deduplicado)</span>
-                        <span className="text-[10px] lowercase font-normal italic text-purple-700 dark:text-purple-300">
-                          No computa en gasto personal para no duplicar con los extractos de tarjeta
-                        </span>
-                      </td>
-                    </tr>
-                    {balanceMatrix.card_settlements.rows.map(r => (
-                      <tr key={r.name} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40">
-                        <td className="py-2 px-3.5 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] z-10">
-                          {r.name}
-                        </td>
-                        {balanceMatrix.months.map(m => (
-                          <td key={m} className="py-2 px-3 text-right font-mono text-neutral-700 dark:text-neutral-300">
-                            {r.by_month[m] ? `${r.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
-                          </td>
-                        ))}
-                        <td className="py-2 px-3 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
-                          {r.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                        <td className="py-2 px-3.5 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
-                          {r.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                      </tr>
-                    ))}
-                    {/* Total Card Settlements Row */}
-                    <tr className="bg-purple-50/40 dark:bg-purple-950/10 font-bold border-t border-purple-200 dark:border-purple-800/40">
-                      <td className="py-2.5 px-3.5 text-purple-900 dark:text-purple-300 sticky left-0 bg-purple-50/40 dark:bg-[#202020] z-10">
-                        {balanceMatrix.card_settlements.total.name}
-                      </td>
-                      {balanceMatrix.months.map(m => (
-                        <td key={m} className="py-2.5 px-3 text-right font-mono text-purple-700 dark:text-purple-400">
-                          {balanceMatrix.card_settlements.total.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                        </td>
-                      ))}
-                      <td className="py-2.5 px-3 text-right font-mono bg-purple-100/30 dark:bg-purple-950/20 text-purple-800 dark:text-purple-300">
-                        {balanceMatrix.card_settlements.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                      <td className="py-2.5 px-3.5 text-right font-mono bg-purple-100/50 dark:bg-purple-950/30 text-purple-900 dark:text-purple-200">
-                        {balanceMatrix.card_settlements.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                    </tr>
-
-                    {/* SECTION 4: TRASPASOS ENTRE CUENTAS PROPIAS Y AMEX */}
-                    {balanceMatrix.internal_transfers && balanceMatrix.internal_transfers.rows && balanceMatrix.internal_transfers.rows.length > 0 && (
+                    {filteredIncomeRows.length > 0 && (
                       <>
-                        <tr className="bg-violet-50/70 dark:bg-violet-950/20 text-violet-900 dark:text-violet-300 font-bold text-xs">
-                          <td colSpan={balanceMatrix.months.length + 3} className="py-2 px-3.5 tracking-wide uppercase text-[10.5px] flex items-center justify-between">
-                            <span>🔄 4. Traspasos Entre Cuentas Propias y Amex (Informativo)</span>
-                            <span className="text-[10px] lowercase font-normal italic text-violet-700 dark:text-violet-300">
-                              Movimientos internos de liquidez. 0 impacto en gasto ni en ingresos
-                            </span>
+                        <tr className="bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-900 dark:text-emerald-300 font-bold text-xs">
+                          <td colSpan={balanceMatrix.months.length + 3} className="py-2.5 px-4 tracking-wide uppercase text-[10.5px] sticky left-0">
+                            🟢 1. Ingresos {searchNorm && <span className="ml-2 font-normal text-[11px] text-emerald-700 dark:text-emerald-300 lowercase">({filteredIncomeRows.length} partidas)</span>}
                           </td>
                         </tr>
-                        {balanceMatrix.internal_transfers.rows.map(r => (
-                          <tr key={r.name} className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40">
-                            <td className="py-2 px-3.5 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] z-10">
-                              {r.name}
+                        {filteredIncomeRows.map(r => (
+                          <tr key={r.name} className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                            <td className="py-2.5 px-4 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                              <div className="flex items-center justify-between">
+                                <span>{r.name}</span>
+                                {searchNorm && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-normal">coincidencia</span>}
+                              </div>
                             </td>
                             {balanceMatrix.months.map(m => (
-                              <td key={m} className="py-2 px-3 text-right font-mono text-neutral-700 dark:text-neutral-300">
+                              <td key={m} className="py-2.5 px-3.5 text-right font-mono text-neutral-700 dark:text-neutral-300">
                                 {r.by_month[m] ? `${r.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
                               </td>
                             ))}
-                            <td className="py-2 px-3 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
+                            <td className="py-2.5 px-3.5 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
                               {r.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                             </td>
-                            <td className="py-2 px-3.5 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
+                            <td className="py-2.5 px-4 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
+                              {r.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Total Income Row (when no search active) */}
+                        {!searchNorm && (
+                          <tr className="bg-emerald-50/40 dark:bg-emerald-950/10 font-bold border-t-2 border-emerald-300/80 dark:border-emerald-800/60">
+                            <td className="py-3 px-4 text-emerald-900 dark:text-emerald-300 sticky left-0 bg-emerald-50/40 dark:bg-[#202020] z-10 border-r border-neutral-200/80 dark:border-neutral-800">
+                              {balanceMatrix.income.total.name}
+                            </td>
+                            {balanceMatrix.months.map(m => (
+                              <td key={m} className="py-3 px-3.5 text-right font-mono text-emerald-700 dark:text-emerald-400">
+                                {balanceMatrix.income.total.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                              </td>
+                            ))}
+                            <td className="py-3 px-3.5 text-right font-mono bg-emerald-100/30 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300">
+                              {balanceMatrix.income.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono bg-emerald-100/50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-200">
+                              {balanceMatrix.income.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+
+                    {/* SECTION 2: GASTOS PERSONALES REALES */}
+                    {filteredExpenseRows.length > 0 && (
+                      <>
+                        <tr className="bg-rose-50/70 dark:bg-rose-950/20 text-rose-900 dark:text-rose-300 font-bold text-xs">
+                          <td colSpan={balanceMatrix.months.length + 3} className="py-2.5 px-4 tracking-wide uppercase text-[10.5px] sticky left-0">
+                            🔴 2. Gastos Personales Reales (Consumo) {searchNorm && <span className="ml-2 font-normal text-[11px] text-rose-700 dark:text-rose-300 lowercase">({filteredExpenseRows.length} partidas)</span>}
+                          </td>
+                        </tr>
+                        {filteredExpenseRows.map(r => (
+                          <tr key={r.name} className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                            <td className="py-2.5 px-4 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                              <div className="flex items-center justify-between">
+                                <span>{r.name}</span>
+                                <span className="text-[10px] text-neutral-400 font-mono ml-2">({r.percentage}%)</span>
+                              </div>
+                            </td>
+                            {balanceMatrix.months.map(m => (
+                              <td key={m} className="py-2.5 px-3.5 text-right font-mono text-neutral-700 dark:text-neutral-300">
+                                {r.by_month[m] ? `${r.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
+                              </td>
+                            ))}
+                            <td className="py-2.5 px-3.5 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
+                              {r.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
+                              {r.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Total Personal Expenses Row (when no search active) */}
+                        {!searchNorm && (
+                          <tr className="bg-rose-50/40 dark:bg-rose-950/10 font-bold border-t-2 border-rose-300/80 dark:border-rose-800/60">
+                            <td className="py-3 px-4 text-rose-900 dark:text-rose-300 sticky left-0 bg-rose-50/40 dark:bg-[#202020] z-10 border-r border-neutral-200/80 dark:border-neutral-800">
+                              {balanceMatrix.personal_expenses.total.name}
+                            </td>
+                            {balanceMatrix.months.map(m => (
+                              <td key={m} className="py-3 px-3.5 text-right font-mono text-rose-600 dark:text-rose-400">
+                                {balanceMatrix.personal_expenses.total.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                              </td>
+                            ))}
+                            <td className="py-3 px-3.5 text-right font-mono bg-rose-100/30 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300">
+                              {balanceMatrix.personal_expenses.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono bg-rose-100/50 dark:bg-rose-950/30 text-rose-800 dark:text-rose-200">
+                              {balanceMatrix.personal_expenses.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+
+                    {/* SECTION 3: LIQUIDACIÓN DE TARJETAS */}
+                    {filteredCardRows.length > 0 && (
+                      <>
+                        <tr className="bg-purple-50/70 dark:bg-purple-950/20 text-purple-900 dark:text-purple-300 font-bold text-xs">
+                          <td colSpan={balanceMatrix.months.length + 3} className="py-2.5 px-4 tracking-wide uppercase text-[10.5px] sticky left-0">
+                            <div className="flex items-center justify-between">
+                              <span>💳 3. Liquidación Tarjetas (Informativo — Deduplicado)</span>
+                              <span className="text-[10px] lowercase font-normal italic text-purple-700 dark:text-purple-300">
+                                No computa en gasto personal para no duplicar con extractos
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {filteredCardRows.map(r => (
+                          <tr key={r.name} className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                            <td className="py-2.5 px-4 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                              {r.name}
+                            </td>
+                            {balanceMatrix.months.map(m => (
+                              <td key={m} className="py-2.5 px-3.5 text-right font-mono text-neutral-700 dark:text-neutral-300">
+                                {r.by_month[m] ? `${r.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
+                              </td>
+                            ))}
+                            <td className="py-2.5 px-3.5 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
+                              {r.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
+                              {r.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Total Card Settlements Row (when no search active) */}
+                        {!searchNorm && (
+                          <tr className="bg-purple-50/40 dark:bg-purple-950/10 font-bold border-t border-purple-200 dark:border-purple-800/40">
+                            <td className="py-3 px-4 text-purple-900 dark:text-purple-300 sticky left-0 bg-purple-50/40 dark:bg-[#202020] z-10 border-r border-neutral-200/80 dark:border-neutral-800">
+                              {balanceMatrix.card_settlements.total.name}
+                            </td>
+                            {balanceMatrix.months.map(m => (
+                              <td key={m} className="py-3 px-3.5 text-right font-mono text-purple-700 dark:text-purple-400">
+                                {balanceMatrix.card_settlements.total.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                              </td>
+                            ))}
+                            <td className="py-3 px-3.5 text-right font-mono bg-purple-100/30 dark:bg-purple-950/20 text-purple-800 dark:text-purple-300">
+                              {balanceMatrix.card_settlements.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono bg-purple-100/50 dark:bg-purple-950/30 text-purple-900 dark:text-purple-200">
+                              {balanceMatrix.card_settlements.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+
+                    {/* SECTION 4: TRASPASOS ENTRE CUENTAS PROPIAS Y AMEX */}
+                    {filteredTransferRows.length > 0 && (
+                      <>
+                        <tr className="bg-violet-50/70 dark:bg-violet-950/20 text-violet-900 dark:text-violet-300 font-bold text-xs">
+                          <td colSpan={balanceMatrix.months.length + 3} className="py-2.5 px-4 tracking-wide uppercase text-[10.5px] sticky left-0">
+                            <div className="flex items-center justify-between">
+                              <span>🔄 4. Traspasos Entre Cuentas Propias y Amex (Informativo)</span>
+                              <span className="text-[10px] lowercase font-normal italic text-violet-700 dark:text-violet-300">
+                                Movimientos internos de liquidez. 0 impacto en gasto ni en ingresos
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {filteredTransferRows.map(r => (
+                          <tr key={r.name} className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                            <td className="py-2.5 px-4 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                              {r.name}
+                            </td>
+                            {balanceMatrix.months.map(m => (
+                              <td key={m} className="py-2.5 px-3.5 text-right font-mono text-neutral-700 dark:text-neutral-300">
+                                {r.by_month[m] ? `${r.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
+                              </td>
+                            ))}
+                            <td className="py-2.5 px-3.5 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-600 dark:text-neutral-400">
+                              {r.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-900 dark:text-white">
                               {r.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                             </td>
                           </tr>
@@ -1111,42 +1343,42 @@ export default function DashboardView({
                     )}
 
                     {/* SECTION 5: GASTOS DE TRABAJO REEMBOLSABLES */}
-                    {balanceMatrix.company_reimbursements && balanceMatrix.company_reimbursements.has_data && (
+                    {hasCompanyOutlaysMatch && balanceMatrix.company_reimbursements && balanceMatrix.company_reimbursements.has_data && (
                       <>
                         <tr className="bg-sky-50/70 dark:bg-sky-950/20 text-sky-900 dark:text-sky-300 font-bold text-xs">
-                          <td colSpan={balanceMatrix.months.length + 3} className="py-2 px-3.5 tracking-wide uppercase text-[10.5px]">
+                          <td colSpan={balanceMatrix.months.length + 3} className="py-2.5 px-4 tracking-wide uppercase text-[10.5px] sticky left-0">
                             💼 5. Gastos Reembolsables de Trabajo (Informativo)
                           </td>
                         </tr>
-                        <tr className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40">
-                          <td className="py-2 px-3.5 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] z-10">
+                        <tr className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                          <td className="py-2.5 px-4 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
                             {balanceMatrix.company_reimbursements.outlays.name}
                           </td>
                           {balanceMatrix.months.map(m => (
-                            <td key={m} className="py-2 px-3 text-right font-mono text-neutral-700 dark:text-neutral-300">
+                            <td key={m} className="py-2.5 px-3.5 text-right font-mono text-neutral-700 dark:text-neutral-300">
                               {balanceMatrix.company_reimbursements.outlays.by_month[m] ? `${balanceMatrix.company_reimbursements.outlays.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
                             </td>
                           ))}
-                          <td className="py-2 px-3 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-500">
+                          <td className="py-2.5 px-3.5 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-500">
                             —
                           </td>
-                          <td className="py-2 px-3.5 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-sky-700 dark:text-sky-300">
+                          <td className="py-2.5 px-4 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-sky-700 dark:text-sky-300">
                             {balanceMatrix.company_reimbursements.outlays.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                           </td>
                         </tr>
-                        <tr className="hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40">
-                          <td className="py-2 px-3.5 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] z-10">
+                        <tr className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                          <td className="py-2.5 px-4 pl-6 font-medium text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
                             {balanceMatrix.company_reimbursements.received.name}
                           </td>
                           {balanceMatrix.months.map(m => (
-                            <td key={m} className="py-2 px-3 text-right font-mono text-emerald-600 dark:text-emerald-400">
+                            <td key={m} className="py-2.5 px-3.5 text-right font-mono text-emerald-600 dark:text-emerald-400">
                               {balanceMatrix.company_reimbursements.received.by_month[m] ? `+${balanceMatrix.company_reimbursements.received.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
                             </td>
                           ))}
-                          <td className="py-2 px-3 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-500">
+                          <td className="py-2.5 px-3.5 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 text-neutral-500">
                             —
                           </td>
-                          <td className="py-2 px-3.5 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-emerald-600 dark:text-emerald-400">
+                          <td className="py-2.5 px-4 text-right font-mono font-semibold bg-neutral-50/90 dark:bg-neutral-800/40 text-emerald-600 dark:text-emerald-400">
                             +{balanceMatrix.company_reimbursements.received.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                           </td>
                         </tr>
@@ -1154,50 +1386,97 @@ export default function DashboardView({
                     )}
 
                     {/* SECTION 6: RESULTADO, AHORRO Y PATRIMONIO */}
-                    <tr className="bg-indigo-50/80 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-200 font-bold text-xs">
-                      <td colSpan={balanceMatrix.months.length + 3} className="py-2 px-3.5 tracking-wide uppercase text-[10.5px]">
-                        📈 6. Resultado Neto y Capacidad de Ahorro
-                      </td>
-                    </tr>
-                    {/* Ahorro Neto Personal */}
-                    <tr className="bg-indigo-50/30 dark:bg-indigo-950/20 font-bold">
-                      <td className="py-2.5 px-3.5 text-indigo-900 dark:text-indigo-200 sticky left-0 bg-indigo-50/30 dark:bg-[#202020] z-10">
-                        {balanceMatrix.results.net_savings.name}
-                      </td>
-                      {balanceMatrix.months.map(m => {
-                        const val = balanceMatrix.results.net_savings.by_month[m];
-                        return (
-                          <td key={m} className={`py-2.5 px-3 text-right font-mono font-bold ${
-                            val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                          }`}>
-                            {val.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                    {(!searchNorm || ['ahorro', 'resultado', 'tasa', 'patrimonio', 'neto'].some(k => searchNorm.includes(k))) && (
+                      <>
+                        <tr className="bg-indigo-50/80 dark:bg-indigo-950/30 text-indigo-950 dark:text-indigo-200 font-bold text-xs">
+                          <td colSpan={balanceMatrix.months.length + 3} className="py-2.5 px-4 tracking-wide uppercase text-[10.5px] sticky left-0">
+                            📈 6. Resultado Neto y Capacidad de Ahorro
                           </td>
-                        );
-                      })}
-                      <td className="py-2.5 px-3 text-right font-mono bg-indigo-100/40 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-300 font-bold">
-                        {balanceMatrix.results.net_savings.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                      <td className="py-2.5 px-3.5 text-right font-mono bg-indigo-100/70 dark:bg-indigo-950/50 text-indigo-950 dark:text-indigo-100 font-bold">
-                        {balanceMatrix.results.net_savings.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                      </td>
-                    </tr>
-                    {/* Tasa de Ahorro */}
-                    <tr>
-                      <td className="py-2 px-3.5 pl-6 font-semibold text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] z-10">
-                        {balanceMatrix.results.savings_rate.name}
-                      </td>
-                      {balanceMatrix.months.map(m => (
-                        <td key={m} className="py-2 px-3 text-right font-mono font-semibold text-neutral-700 dark:text-neutral-300">
-                          {balanceMatrix.results.savings_rate.by_month[m]}%
+                        </tr>
+                        {/* Ahorro Neto Personal */}
+                        <tr className="bg-indigo-50/30 dark:bg-indigo-950/20 font-bold">
+                          <td className="py-3 px-4 text-indigo-900 dark:text-indigo-200 sticky left-0 bg-indigo-50/30 dark:bg-[#202020] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                            {balanceMatrix.results.net_savings.name}
+                          </td>
+                          {balanceMatrix.months.map(m => {
+                            const val = balanceMatrix.results.net_savings.by_month[m];
+                            return (
+                              <td key={m} className={`py-3 px-3.5 text-right font-mono font-bold ${
+                                val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
+                              }`}>
+                                {val.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                              </td>
+                            );
+                          })}
+                          <td className="py-3 px-3.5 text-right font-mono bg-indigo-100/40 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-300 font-bold">
+                            {balanceMatrix.results.net_savings.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono bg-indigo-100/70 dark:bg-indigo-950/50 text-indigo-950 dark:text-indigo-100 font-bold">
+                            {balanceMatrix.results.net_savings.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                          </td>
+                        </tr>
+                        {/* Tasa de Ahorro */}
+                        <tr className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                          <td className="py-2.5 px-4 pl-6 font-semibold text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                            {balanceMatrix.results.savings_rate.name}
+                          </td>
+                          {balanceMatrix.months.map(m => (
+                            <td key={m} className="py-2.5 px-3.5 text-right font-mono font-semibold text-neutral-700 dark:text-neutral-300">
+                              {balanceMatrix.results.savings_rate.by_month[m]}%
+                            </td>
+                          ))}
+                          <td className="py-2.5 px-3.5 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 font-bold text-neutral-800 dark:text-neutral-100">
+                            {balanceMatrix.results.savings_rate.average}%
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-mono font-bold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-800 dark:text-neutral-100">
+                            {balanceMatrix.results.savings_rate.average}% (media)
+                          </td>
+                        </tr>
+                        {/* Inversiones si existen */}
+                        {balanceMatrix.results.investments && (
+                          <tr className="group hover:bg-neutral-50/80 dark:hover:bg-neutral-800/40 transition-colors">
+                            <td className="py-2.5 px-4 pl-6 font-semibold text-neutral-800 dark:text-neutral-200 sticky left-0 bg-white dark:bg-[#202020] group-hover:bg-neutral-50 dark:group-hover:bg-[#262626] z-10 border-r border-neutral-200/80 dark:border-neutral-800 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.06)]">
+                              {balanceMatrix.results.investments.name}
+                            </td>
+                            {balanceMatrix.months.map(m => (
+                              <td key={m} className="py-2.5 px-3.5 text-right font-mono font-semibold text-indigo-600 dark:text-indigo-400">
+                                {balanceMatrix.results.investments.by_month[m] ? `${balanceMatrix.results.investments.by_month[m].toLocaleString('es-ES', { minimumFractionDigits: 2 })} €` : '—'}
+                              </td>
+                            ))}
+                            <td className="py-2.5 px-3.5 text-right font-mono bg-indigo-50/60 dark:bg-neutral-800/20 font-bold text-indigo-700 dark:text-indigo-300">
+                              {balanceMatrix.results.investments.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono font-bold bg-indigo-100/50 dark:bg-indigo-950/40 text-indigo-900 dark:text-indigo-200">
+                              {balanceMatrix.results.investments.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )}
+
+                    {/* EMPTY SEARCH STATE (No matches found) */}
+                    {searchNorm && totalMatchesCount === 0 && (
+                      <tr>
+                        <td colSpan={balanceMatrix.months.length + 3} className="py-16 text-center">
+                          <div className="flex flex-col items-center justify-center space-y-2.5 max-w-sm mx-auto">
+                            <Search className="w-8 h-8 text-neutral-300 dark:text-neutral-600" />
+                            <p className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">
+                              No se encontraron partidas que coincidan con "{matrixSearch}"
+                            </p>
+                            <p className="text-xs text-neutral-400">
+                              Prueba con otro término (ej: "coche", "gasolina", "supermercado", "alquiler") o pulsa el botón para restablecer.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => setMatrixSearch('')}
+                              className="mt-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 dark:text-indigo-300 transition-colors cursor-pointer"
+                            >
+                              Limpiar filtro de búsqueda
+                            </button>
+                          </div>
                         </td>
-                      ))}
-                      <td className="py-2 px-3 text-right font-mono bg-neutral-50/60 dark:bg-neutral-800/20 font-bold text-neutral-800 dark:text-neutral-100">
-                        {balanceMatrix.results.savings_rate.average}%
-                      </td>
-                      <td className="py-2 px-3.5 text-right font-mono font-bold bg-neutral-50/90 dark:bg-neutral-800/40 text-neutral-800 dark:text-neutral-100">
-                        {balanceMatrix.results.savings_rate.average}% (media)
-                      </td>
-                    </tr>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>

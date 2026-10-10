@@ -229,7 +229,7 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <main className="flex-1 overflow-y-auto px-6 py-6 sm:px-10 sm:py-8">
+      <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-8 sm:py-7">
         {activeTab === 'dashboard' && (
           <DashboardView
             summary={summary}

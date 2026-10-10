@@ -578,14 +578,24 @@ export default function TransactionsView({
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
           {/* Search */}
           <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-[#787774]" />
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-400 pointer-events-none" />
             <input
               type="text"
               placeholder="Buscar por concepto, comercio o tarjeta..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200 dark:border-neutral-700 rounded-md outline-none text-[#37352f] dark:text-[#e0e0e0] focus:border-neutral-400"
+              className="w-full pl-9 pr-9 py-2 text-sm font-medium bg-neutral-50 dark:bg-[#181818] border border-neutral-300 dark:border-neutral-700 rounded-lg outline-none text-neutral-900 dark:text-neutral-50 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:bg-white dark:focus:bg-[#222222] focus:border-indigo-500 dark:focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-inner"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Account Filter Pills */}
