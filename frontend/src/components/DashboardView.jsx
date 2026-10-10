@@ -164,6 +164,65 @@ export default function DashboardView({
 
 
 
+  // Normalize string helper for diacritic-insensitive & case-insensitive search
+  const normalizeStr = (str) =>
+    (str || '')
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const searchNorm = normalizeStr(matrixSearch);
+
+  const filteredIncomeRows = useMemo(() => {
+    if (!balanceMatrix?.income?.rows) return [];
+    if (!searchNorm) return balanceMatrix.income.rows;
+    return balanceMatrix.income.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm)
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const filteredExpenseRows = useMemo(() => {
+    if (!balanceMatrix?.personal_expenses?.rows) return [];
+    if (!searchNorm) return balanceMatrix.personal_expenses.rows;
+    return balanceMatrix.personal_expenses.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm) ||
+      (r.category && normalizeStr(r.category).includes(searchNorm))
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const filteredCardRows = useMemo(() => {
+    if (!balanceMatrix?.card_settlements?.rows) return [];
+    if (!searchNorm) return balanceMatrix.card_settlements.rows;
+    return balanceMatrix.card_settlements.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm)
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const filteredTransferRows = useMemo(() => {
+    if (!balanceMatrix?.internal_transfers?.rows) return [];
+    if (!searchNorm) return balanceMatrix.internal_transfers.rows;
+    return balanceMatrix.internal_transfers.rows.filter(r =>
+      normalizeStr(r.name).includes(searchNorm)
+    );
+  }, [balanceMatrix, searchNorm]);
+
+  const hasCompanyOutlaysMatch = useMemo(() => {
+    if (!balanceMatrix?.company_reimbursements?.has_data) return false;
+    if (!searchNorm) return true;
+    const name1 = normalizeStr(balanceMatrix.company_reimbursements.outlays?.name);
+    const name2 = normalizeStr(balanceMatrix.company_reimbursements.received?.name);
+    return name1.includes(searchNorm) || name2.includes(searchNorm) || 'empresa'.includes(searchNorm) || 'reembolsable'.includes(searchNorm);
+  }, [balanceMatrix, searchNorm]);
+
+  const totalMatchesCount =
+    filteredIncomeRows.length +
+    filteredExpenseRows.length +
+    filteredCardRows.length +
+    filteredTransferRows.length +
+    (hasCompanyOutlaysMatch && searchNorm ? 2 : 0);
+
   if (!summary) {
     return (
       <div className="flex items-center justify-center h-full text-neutral-400">
@@ -252,65 +311,6 @@ export default function DashboardView({
     link.click();
     document.body.removeChild(link);
   };
-
-  // Normalize string helper for diacritic-insensitive & case-insensitive search
-  const normalizeStr = (str) =>
-    (str || '')
-      .toString()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .trim();
-
-  const searchNorm = normalizeStr(matrixSearch);
-
-  const filteredIncomeRows = useMemo(() => {
-    if (!balanceMatrix?.income?.rows) return [];
-    if (!searchNorm) return balanceMatrix.income.rows;
-    return balanceMatrix.income.rows.filter(r =>
-      normalizeStr(r.name).includes(searchNorm)
-    );
-  }, [balanceMatrix, searchNorm]);
-
-  const filteredExpenseRows = useMemo(() => {
-    if (!balanceMatrix?.personal_expenses?.rows) return [];
-    if (!searchNorm) return balanceMatrix.personal_expenses.rows;
-    return balanceMatrix.personal_expenses.rows.filter(r =>
-      normalizeStr(r.name).includes(searchNorm) ||
-      (r.category && normalizeStr(r.category).includes(searchNorm))
-    );
-  }, [balanceMatrix, searchNorm]);
-
-  const filteredCardRows = useMemo(() => {
-    if (!balanceMatrix?.card_settlements?.rows) return [];
-    if (!searchNorm) return balanceMatrix.card_settlements.rows;
-    return balanceMatrix.card_settlements.rows.filter(r =>
-      normalizeStr(r.name).includes(searchNorm)
-    );
-  }, [balanceMatrix, searchNorm]);
-
-  const filteredTransferRows = useMemo(() => {
-    if (!balanceMatrix?.internal_transfers?.rows) return [];
-    if (!searchNorm) return balanceMatrix.internal_transfers.rows;
-    return balanceMatrix.internal_transfers.rows.filter(r =>
-      normalizeStr(r.name).includes(searchNorm)
-    );
-  }, [balanceMatrix, searchNorm]);
-
-  const hasCompanyOutlaysMatch = useMemo(() => {
-    if (!balanceMatrix?.company_reimbursements?.has_data) return false;
-    if (!searchNorm) return true;
-    const name1 = normalizeStr(balanceMatrix.company_reimbursements.outlays?.name);
-    const name2 = normalizeStr(balanceMatrix.company_reimbursements.received?.name);
-    return name1.includes(searchNorm) || name2.includes(searchNorm) || 'empresa'.includes(searchNorm) || 'reembolsable'.includes(searchNorm);
-  }, [balanceMatrix, searchNorm]);
-
-  const totalMatchesCount =
-    filteredIncomeRows.length +
-    filteredExpenseRows.length +
-    filteredCardRows.length +
-    filteredTransferRows.length +
-    (hasCompanyOutlaysMatch && searchNorm ? 2 : 0);
 
   return (
     <div className={`${activeViewMode === 'balance_excel' ? 'w-full max-w-full px-1 sm:px-3' : 'max-w-6xl mx-auto'} space-y-6 pb-12 transition-all`}>
