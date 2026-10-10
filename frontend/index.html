@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es" class="h-full antialiased">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏦</text></svg>" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bank Agent — Diego Hernández</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <script>
+    (function () {
+      var theme = localStorage.getItem('bank_agent_theme');
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    })();
+  </script>
+</head>
+
+<body
+  class="h-full bg-[#fbfbfa] text-[#37352f] dark:bg-[#191919] dark:text-[#d4d4d4] selection:bg-amber-100 dark:selection:bg-neutral-800">
+  <div id="root" class="h-full"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
+</html>
