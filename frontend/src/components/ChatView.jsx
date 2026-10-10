@@ -14,15 +14,14 @@ import {
   PieChart, 
   CreditCard,
   ChevronRight,
-  ShieldAlert
+  ShieldAlert,
+  Plus
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
 
-export default function ChatView({ selectedMonth, summary }) {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: `# ¡Hola Diego! 👋 Soy tu Asistente de Inteligencia Financiera Personal
+export const INITIAL_CHAT_MESSAGE = {
+  role: 'assistant',
+  content: `# ¡Hola Diego! 👋 Soy tu Asistente de Inteligencia Financiera Personal
 Tengo acceso en tiempo real a tus cuentas bancarias (**Santander, Santander Ahorro, Iberia Cards, N26, Amex**), cartera de inversión en **Fidelity MSCI World (IE00BYX5P602)** y acciones en **Google Sheets** (cotizaciones en directo vía Finnhub).
 
 ### 🔍 ¿En qué te puedo ayudar hoy?
@@ -33,8 +32,41 @@ Tengo acceso en tiempo real a tus cuentas bancarias (**Santander, Santander Ahor
 - 🛒 **Análisis por Comercio**: Desglose exacto en supermercados (Alcampo, Mercadona), restaurantes, gasolina o viajes.
 
 *Selecciona una de las sugerencias rápidas abajo o escribe cualquier duda.*`
+};
+
+export default function ChatView({ 
+  selectedMonth, 
+  summary,
+  messages: externalMessages,
+  setMessages: externalSetMessages,
+  onResetChat
+}) {
+  const [internalMessages, setInternalMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bank_agent_chat_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Error reading chat history from localStorage:', e);
     }
-  ]);
+    return [INITIAL_CHAT_MESSAGE];
+  });
+
+  const messages = externalMessages || internalMessages;
+  const setMessages = externalSetMessages || setInternalMessages;
+
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      try {
+        localStorage.setItem('bank_agent_chat_history', JSON.stringify(messages));
+      } catch (e) {
+        console.warn('Error saving chat to localStorage:', e);
+      }
+    }
+  }, [messages]);
+
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState(null);
@@ -122,6 +154,23 @@ Tengo acceso en tiempo real a tus cuentas bancarias (**Santander, Santander Ahor
     document.body.removeChild(link);
   };
 
+  const handleNewChat = () => {
+    if (messages.length > 1) {
+      if (!window.confirm('¿Deseas iniciar un nuevo chat? La conversación actual se reiniciará.')) {
+        return;
+      }
+    }
+    try {
+      localStorage.removeItem('bank_agent_chat_history');
+    } catch (e) {}
+
+    if (onResetChat) {
+      onResetChat();
+    } else {
+      setMessages([INITIAL_CHAT_MESSAGE]);
+    }
+  };
+
   const promptSuggestions = [
     {
       category: "Semestral",
@@ -192,12 +241,12 @@ Tengo acceso en tiempo real a tus cuentas bancarias (**Santander, Santander Ahor
           </button>
 
           <button
-            onClick={() => setMessages([messages[0]])}
-            className="text-xs px-2.5 py-1.5 rounded-md bg-neutral-100 hover:bg-neutral-200 dark:bg-neutral-800 dark:hover:bg-neutral-700 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white flex items-center space-x-1.5 transition-colors cursor-pointer border border-neutral-200/80 dark:border-neutral-700"
-            title="Reiniciar chat"
+            onClick={handleNewChat}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 flex items-center space-x-1.5 transition-colors cursor-pointer border border-indigo-200 dark:border-indigo-800/50 font-semibold shadow-2xs"
+            title="Iniciar un nuevo chat (borra la conversación actual e inicia una nueva)"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Limpiar</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Nuevo Chat</span>
           </button>
         </div>
       </div>

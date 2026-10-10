@@ -292,10 +292,13 @@ export default function TransactionsView({
     }
 
     if (searchTerm) {
-      const q = searchTerm.toLowerCase();
+      const q = searchTerm.toLowerCase().trim();
       const inDesc = t.description?.toLowerCase().includes(q);
       const inNotes = t.notes?.toLowerCase().includes(q);
-      if (!inDesc && !inNotes) return false;
+      const inCat = t.category?.toLowerCase().includes(q);
+      const inAcc = t.account?.toLowerCase().includes(q);
+      const inAmt = String(Math.abs(t.amount || 0)).includes(q) || String(t.amount || 0).includes(q);
+      if (!inDesc && !inNotes && !inCat && !inAcc && !inAmt) return false;
     }
     return true;
   });
@@ -574,37 +577,84 @@ export default function TransactionsView({
       </div>
 
       {/* Filters Bar */}
-      <div className="p-3 rounded-lg bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-          {/* Search */}
+      <div className="p-4 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-3.5">
+        {/* Row 1: Full-Width Prominent Search Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-400 pointer-events-none" />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-neutral-400 dark:text-neutral-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="Buscar por concepto, comercio o tarjeta..."
+              placeholder="Buscar por concepto, comercio, importe o tarjeta (ej: Mercadona, Nómina, Gasolina, Coche, Bizum...)"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-9 py-2 text-sm font-medium bg-neutral-50 dark:bg-[#181818] border border-neutral-300 dark:border-neutral-700 rounded-lg outline-none text-neutral-900 dark:text-neutral-50 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:bg-white dark:focus:bg-[#222222] focus:border-indigo-500 dark:focus:border-indigo-400 focus:ring-1 focus:ring-indigo-500/20 transition-all shadow-inner"
+              className="w-full pl-10 pr-10 py-2.5 sm:py-3 text-sm font-medium bg-neutral-50 dark:bg-[#181818] border border-neutral-300 dark:border-neutral-700 rounded-xl outline-none text-neutral-900 dark:text-neutral-50 placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:bg-white dark:focus:bg-[#222222] focus:border-indigo-500 dark:focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20 transition-all shadow-inner"
             />
             {searchTerm && (
               <button
                 type="button"
                 onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors cursor-pointer"
                 title="Limpiar búsqueda"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
 
-          {/* Account Filter Pills */}
-          <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0">
+          {searchTerm && (
+            <div className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/40 whitespace-nowrap">
+              <span>{filtered.length} {filtered.length === 1 ? 'movimiento' : 'movimientos'}</span>
+              <button
+                onClick={() => setSearchTerm('')}
+                className="text-xs text-indigo-500 hover:text-indigo-700 underline font-normal cursor-pointer ml-1"
+              >
+                Limpiar
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Row 2: Quick Filter Chips */}
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-neutral-400 text-[11px] font-medium mr-1">Filtros rápidos:</span>
+          {[
+            { label: 'Todo', query: '' },
+            { label: '🚗 Coche', query: 'coche' },
+            { label: '⛽ Gasolina', query: 'gasolina' },
+            { label: '🛒 Supermercado', query: 'supermercado' },
+            { label: '🍽️ Restaurantes', query: 'restaurante' },
+            { label: '💼 Nómina', query: 'nómina' },
+            { label: '🏠 Hogar', query: 'hogar' },
+            { label: '📱 Suscripciones', query: 'suscripcion' },
+            { label: '⚡ Suministros', query: 'suministros' }
+          ].map((pill) => {
+            const isSelected = (!searchTerm && !pill.query) || (searchTerm.toLowerCase() === pill.query.toLowerCase());
+            return (
+              <button
+                key={pill.label}
+                type="button"
+                onClick={() => setSearchTerm(pill.query)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white shadow-2xs font-semibold'
+                    : 'bg-neutral-100 dark:bg-neutral-800/80 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+                }`}
+              >
+                {pill.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Row 3: Account Filter Pills */}
+        <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800/70">
+          <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0">
+            <span className="text-neutral-400 text-[11px] font-medium mr-1 whitespace-nowrap">Cuenta:</span>
             {allAccountTabs.map((acc) => (
               <button
                 key={acc}
                 onClick={() => setSelectedAccount(acc)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap cursor-pointer ${
                   selectedAccount === acc
                     ? 'bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 font-semibold shadow-xs'
                     : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import DashboardView from './components/DashboardView';
-import ChatView from './components/ChatView';
+import ChatView, { INITIAL_CHAT_MESSAGE } from './components/ChatView';
 import ClarificationQueue from './components/ClarificationQueue';
 import TransactionsView from './components/TransactionsView';
 import CompanyExpensesView from './components/CompanyExpensesView';
@@ -25,6 +25,37 @@ export default function App() {
   const [categories, setCategories] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState('2026-09');
   const [loading, setLoading] = useState(true);
+
+  // Persistent Chat Messages (never lost across tab switches or reloads)
+  const [chatMessages, setChatMessages] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bank_agent_chat_history');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Error reading chat history from localStorage:', e);
+    }
+    return [INITIAL_CHAT_MESSAGE];
+  });
+
+  useEffect(() => {
+    if (chatMessages && chatMessages.length > 0) {
+      try {
+        localStorage.setItem('bank_agent_chat_history', JSON.stringify(chatMessages));
+      } catch (e) {
+        console.warn('Error saving chat history to localStorage:', e);
+      }
+    }
+  }, [chatMessages]);
+
+  const handleResetChat = () => {
+    try {
+      localStorage.removeItem('bank_agent_chat_history');
+    } catch (e) {}
+    setChatMessages([INITIAL_CHAT_MESSAGE]);
+  };
 
   // Undo System for mass changes & recommendations
   const [undoToast, setUndoToast] = useState(null);
@@ -244,6 +275,9 @@ export default function App() {
           <ChatView
             selectedMonth={selectedMonth}
             summary={summary}
+            messages={chatMessages}
+            setMessages={setChatMessages}
+            onResetChat={handleResetChat}
           />
         )}
 
