@@ -13,7 +13,8 @@ import {
   Wallet,
   MessageSquare,
   Landmark,
-  Settings
+  Settings,
+  BookOpen
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -54,6 +55,7 @@ export default function Sidebar({
     { id: 'portfolio', label: 'Portfolio & Capital', icon: TrendingUp },
     { id: 'forecast', label: 'Pronósticos & IA', icon: Sparkles },
     { id: 'import', label: 'Importar Extractos', icon: Upload },
+    { id: 'guide', label: 'Guía & Manual', icon: BookOpen },
     { id: 'settings', label: 'Ajustes', icon: Settings },
   ];
 

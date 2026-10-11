@@ -10,6 +10,7 @@ import ForecastView from './components/ForecastView';
 import ImportView from './components/ImportView';
 import LoansView from './components/LoansView';
 import SettingsView from './components/SettingsView';
+import GuideView from './components/GuideView';
 import NewTransactionModal from './components/NewTransactionModal';
 import FundContributionModal from './components/FundContributionModal';
 import UndoToast from './components/UndoToast';
@@ -423,6 +424,12 @@ export default function App() {
             darkMode={darkMode}
             isOnboarding={isOnboarding}
             onCompleteOnboarding={handleCompleteOnboarding}
+          />
+        )}
+
+        {activeTab === 'guide' && (
+          <GuideView
+            setActiveTab={setActiveTab}
           />
         )}
       </main>

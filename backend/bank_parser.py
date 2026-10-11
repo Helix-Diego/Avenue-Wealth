@@ -8,6 +8,11 @@ from html.parser import HTMLParser
 ACCOUNT_SANTANDER_MAIN = "Banco Santander"
 ACCOUNT_SANTANDER_SAVINGS = "Santander Ahorro"
 ACCOUNT_SANTANDER_CARD = "Tarjeta Santander"
+ACCOUNT_CAIXA = "CaixaBank"
+ACCOUNT_REVOLUT = "Revolut"
+ACCOUNT_ING = "ING Direct"
+ACCOUNT_BBVA = "BBVA"
+ACCOUNT_OPENBANK = "Openbank"
 ACCOUNT_IBERIA_CARDS = "Iberia Cards"
 ACCOUNT_N26 = "N26"
 ACCOUNT_AMEX = "American Express"
@@ -74,7 +79,7 @@ def clean_amount(val, is_credit_card_charge: bool = False) -> float:
     is_negative = '-' in s or (s.startswith('(') and s.endswith(')')) or s.endswith('-')
 
     # Remove currency words (EUR, USD, etc.) and symbols (€, $, £, quotes, parens)
-    s = re.sub(r'(?i)\b(eur|euros?|usd|dollars?|gbp|chf)\b', '', s)
+    s = re.sub(r'(?i)(eur|euros?|usd|dollars?|gbp|chf)', '', s)
     s = re.sub(r'[€$£\s"\'\(\)]', '', s)
     s = s.replace('-', '') # remove minus to format cleanly
 
@@ -168,8 +173,32 @@ def detect_account_from_content(full_text: str = "", default_account: str = "Ban
         return default_account
 
     enabled_banks = get_enabled_bank_ids()
+    fn_lower = filename.lower()
     sample = (filename + " " + full_text[:4000]).lower()
 
+    # 1. ING Direct: signature headers ("movimientos de la cuenta", "f. valor", "ing direct") or filename
+    if "ing" in enabled_banks and ("ing" in fn_lower or "movimientos de la cuenta" in sample or "ing direct" in sample or "f. valor" in sample or "f.valor" in sample):
+        return ACCOUNT_ING
+
+    # 2. Revolut: signature structural headers ("started date", "completed date", "card payment") or filename
+    if "revolut" in enabled_banks:
+        is_revolut = (
+            "revolut" in fn_lower
+            or (("started date" in sample or "started_date" in sample) and ("completed date" in sample or "completion date" in sample or "state" in sample))
+            or ("card payment" in sample and "product" in sample)
+        )
+        if is_revolut:
+            return ACCOUNT_REVOLUT
+
+    # 3. CaixaBank: signature format (Concepto;Fecha;Importe;Saldo) or filename / bank mentions
+    if "caixabank" in enabled_banks and ("caixa" in fn_lower or "caixabank" in sample or "la caixa" in sample or "lacaixa" in sample or ("concepto;" in sample and "fecha;" in sample and "saldo" in sample)):
+        return ACCOUNT_CAIXA
+
+    # 4. Other specific banks
+    if "bbva" in enabled_banks and "bbva" in sample:
+        return ACCOUNT_BBVA
+    if "openbank" in enabled_banks and "openbank" in sample:
+        return ACCOUNT_OPENBANK
     if "myinvestor" in enabled_banks and any(k in sample for k in ["myinvestor", "my investor", "fidelity msci world", "transferencia desde myinvestor"]):
         return ACCOUNT_MYINVESTOR
     if "n26" in enabled_banks and "n26" in sample:
@@ -248,7 +277,7 @@ def parse_csv_content(content_str: str, default_account: str = "Banco Santander"
 
     for idx, row in enumerate(all_rows[:40]):
         row_str = " ".join(row).lower()
-        has_date_term = any(w in row_str for w in ["fecha operación", "fecha operacion", "f. operacion", "transaction date", "booking date", "fecha", "date"])
+        has_date_term = any(w in row_str for w in ["fecha operación", "fecha operacion", "f. operacion", "f.operacion", "f. valor", "f.valor", "fecha valor", "started date", "completed date", "transaction date", "booking date", "fecha", "date"])
         has_desc_term = any(w in row_str for w in ["comercio", "concepto", "descripción", "descripcion", "description", "movimiento", "detalle", "partner name", "partner", "payee", "beneficiario", "destinatario"])
         has_amount_term = any(w in row_str for w in ["importe", "amount", "cantidad", "saldo", "balance", "cargo", "abono"])
 
@@ -270,11 +299,16 @@ def parse_csv_content(content_str: str, default_account: str = "Banco Santander"
     headers = [h.lower().strip() for h in all_rows[header_idx]]
 
     # Prioritized column matching:
-    # 1. Date: First look strictly for Fecha de Operación (actual day the purchase/transfer occurred)
+    # 1. Date: First look strictly for Fecha de Operación / Started Date
     for i, h in enumerate(headers):
-        if any(w in h for w in ["fecha operación", "fecha operacion", "f. operacion", "f.operacion", "fecha transaccion", "transaction date", "operation date"]):
+        if any(w in h for w in ["fecha operación", "fecha operacion", "f. operacion", "f.operacion", "started date", "started_date", "completion date", "completed date", "fecha transaccion", "transaction date", "operation date"]):
             date_col = i
             break
+    if date_col == -1:
+        for i, h in enumerate(headers):
+            if any(w in h for w in ["f. valor", "f.valor", "fecha valor", "value date"]):
+                date_col = i
+                break
     if date_col == -1:
         for i, h in enumerate(headers):
             if "valor" not in h and "value" not in h and any(w in h for w in ["booking date", "fecha", "date"]):
@@ -293,10 +327,22 @@ def parse_csv_content(content_str: str, default_account: str = "Banco Santander"
 
     orig_amount_col = -1
     orig_curr_col = -1
+    comment_col = -1
+    subcategory_col = -1
+    state_col = -1
+    fee_col = -1
 
     for i, h in enumerate(headers):
         if desc_col == -1 and any(w in h for w in ["partner name", "partner", "destinatario", "ordenante", "comercio", "description", "concepto", "descripción", "descripcion", "detalle", "movimiento", "payee", "beneficiario"]):
             desc_col = i
+        elif comment_col == -1 and any(w in h for w in ["comentario", "comment", "nota", "notas"]):
+            comment_col = i
+        elif subcategory_col == -1 and any(w in h for w in ["subcategoría", "subcategoria", "subcategory"]):
+            subcategory_col = i
+        elif state_col == -1 and any(w in h for w in ["state", "estado", "status"]):
+            state_col = i
+        elif fee_col == -1 and any(w in h for w in ["fee", "comisión", "comision"]):
+            fee_col = i
         elif ref_col == -1 and any(w in h for w in ["payment reference", "referencia de pago", "verwendungszweck", "concepto 2", "referencia"]):
             ref_col = i
         elif balance_col == -1 and any(w in h for w in ["balance", "saldo", "saldo contable", "saldo disponible", "saldo actual"]):
@@ -360,6 +406,12 @@ def parse_csv_content(content_str: str, default_account: str = "Banco Santander"
         if len(row) <= max(date_col, desc_col):
             continue
 
+        # Skip reverted / failed / declined card payments (Revolut, etc.)
+        if state_col >= 0 and state_col < len(row):
+            st = row[state_col].strip().upper()
+            if st in ["REVERTED", "FAILED", "DECLINED", "CANCELLED"]:
+                continue
+
         raw_date = row[date_col].strip()
         raw_desc = row[desc_col].strip() if desc_col < len(row) else ""
         raw_ref = row[ref_col].strip() if ref_col >= 0 and ref_col < len(row) else ""
@@ -375,7 +427,12 @@ def parse_csv_content(content_str: str, default_account: str = "Banco Santander"
         raw_desc = raw_desc.replace('\n', ' ').strip()
         raw_ref = raw_ref.replace('\n', ' ').strip()
 
-        # Enrich description with payment reference if available (very helpful for N26 and Amex)
+        # Enrich description with payment reference or comment if available
+        if comment_col >= 0 and comment_col < len(row) and row[comment_col].strip():
+            c_text = row[comment_col].strip()
+            if c_text and c_text.lower() not in raw_desc.lower():
+                raw_desc = f"{raw_desc} ({c_text})" if raw_desc else c_text
+
         if not raw_desc and raw_ref:
             raw_desc = raw_ref
         elif raw_desc and raw_ref and raw_ref.lower() not in raw_desc.lower() and len(raw_ref) > 1:

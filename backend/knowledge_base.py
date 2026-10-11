@@ -333,6 +333,23 @@ KNOWLEDGE_BASE_ENTRIES = [
     ("BONIFICACION DE CAMPAÑA", "Otros ingresos", 81.00, "Bonificación banco"),
     ("LOTERIA", "Otros ingresos", 50.00, "Premio lotería"),
     ("INGRESO CONTRA CUENTA EN ATM", "Otros ingresos", 220.00, "Ingreso en cajero"),
+
+    # Comercios & Servicios Frecuentes (Revolut, CaixaBank, ING)
+    ("SBB CFF FFS", "Transporte & Gasolina", -50.00, "Trenes y transporte público SBB CFF FFS"),
+    ("DECATHLON", "Deporte & Gimnasio", -30.00, "Tienda de deportes Decathlon"),
+    ("MIGROS", "Alimentación & Supermercado", -10.00, "Supermercado Migros"),
+    ("UDEMY", "Educación", -20.00, "Cursos online Udemy"),
+    ("DISNEY PLUS", "Suscripciones & Servicios", -6.99, "Suscripción Disney+"),
+    ("DISNEY+", "Suscripciones & Servicios", -6.99, "Suscripción Disney+"),
+    ("DGT SANCIONES", "Transporte & Gasolina", -50.00, "Sanciones de tráfico DGT"),
+    ("CENTRO DE SEG", "Transporte & Gasolina", -20.66, "Centro de reconocimientos y seguridad"),
+    ("SA FLORISTERIA", "Otras compras", -52.00, "Floristería"),
+    ("UNIVERSITÉ DE LAUSANNE", "Educación", -20.00, "Tasas universitarias"),
+    ("101RESTOS", "Restaurantes & Ocio", -6.45, "Restaurante"),
+    ("PAGO EN REVOLUT", "Traspaso entre cuentas", -100.00, "Recarga de cuenta Revolut"),
+    ("APPLE PAY TOP-UP", "Traspaso entre cuentas", 150.00, "Recarga con Apple Pay a Revolut"),
+    ("EXCHANGED TO CHF", "Traspaso entre cuentas", -50.00, "Cambio de divisa entre cuentas propias"),
+    ("TU AHORRO CRECE", "Inversiones y ahorros", -0.84, "Redondeo de compras a ahorro ING"),
 ]
 
 def init_knowledge_base():

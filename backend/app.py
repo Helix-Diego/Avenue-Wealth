@@ -321,9 +321,9 @@ def update_general_settings_endpoint(req: GeneralSettingsUpdate):
     return {"status": "updated"}
 
 @app.post("/api/settings/reset-data")
-def reset_data_endpoint(req: ResetDataRequest):
+def reset_data_endpoint(req: Optional[ResetDataRequest] = None):
     try:
-        clean_all_transactions(keep_settings=req.keep_settings if req.keep_settings is not None else True)
+        clean_all_transactions(keep_settings=req.keep_settings if req and req.keep_settings is not None else True)
         return {"status": "success", "message": "Datos de transacciones, cuentas y préstamos eliminados correctamente."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1526,6 +1526,16 @@ async def upload_statement(
         matched_bank_id = None
         if "santander" in check_acc:
             matched_bank_id = "santander"
+        elif "caixa" in check_acc:
+            matched_bank_id = "caixabank"
+        elif "revolut" in check_acc:
+            matched_bank_id = "revolut"
+        elif "ing" in check_acc:
+            matched_bank_id = "ing"
+        elif "bbva" in check_acc:
+            matched_bank_id = "bbva"
+        elif "openbank" in check_acc:
+            matched_bank_id = "openbank"
         elif "amex" in check_acc or "american express" in check_acc:
             matched_bank_id = "amex"
         elif "iberia" in check_acc:

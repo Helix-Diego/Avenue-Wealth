@@ -275,21 +275,24 @@ def init_db():
         VALUES (?, ?, ?, ?)
         """, default_categories)
 
-    # Seed default supported banks if empty
-    cursor.execute("SELECT COUNT(*) FROM supported_banks")
-    if cursor.fetchone()[0] == 0:
-        default_banks = [
-            ("santander", "Banco Santander", 1, "Cuentas corrientes y tarjetas de crédito/débito", "CSV, Excel (.xlsx, .xls)", "red"),
-            ("amex", "American Express", 1, "Tarjetas Amex (Platinum, Gold, etc.) con normalización de signos", "CSV", "blue"),
-            ("iberia_cards", "Iberia Cards", 1, "Tarjetas Iberia Icon Visa / Mastercard", "CSV", "amber"),
-            ("n26", "N26", 1, "Cuentas bancarias N26 (fechas seriales y multidivisa)", "CSV", "teal"),
-            ("myinvestor", "MyInvestor", 1, "Cuentas de inversión, fondos indexados y efectivo", "CSV", "purple"),
-            ("generic", "Formato Genérico", 1, "Cualquier extracto con columnas Fecha, Concepto e Importe", "CSV, Excel (.xlsx, .xls)", "gray"),
-        ]
-        cursor.executemany("""
-        INSERT OR IGNORE INTO supported_banks (id, name, enabled, description, file_formats, badge_color)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """, default_banks)
+    # Seed default supported banks
+    default_banks = [
+        ("santander", "Banco Santander", 1, "Cuentas corrientes y tarjetas de crédito/débito", "CSV, Excel (.xlsx, .xls)", "red"),
+        ("caixabank", "CaixaBank", 1, "Cuentas corrientes y tarjetas CaixaBank (formato con saldo y divisa)", "CSV, Excel (.xlsx, .xls)", "blue"),
+        ("revolut", "Revolut", 1, "Cuentas Revolut multidivisa (EUR, CHF, USD) y pagos con tarjeta", "CSV, Excel (.xlsx, .xls)", "teal"),
+        ("ing", "ING Direct", 1, "Cuentas corrientes, nómina y tarjetas ING (F. VALOR, IMPORTE)", "CSV, Excel (.xlsx, .xls)", "orange"),
+        ("bbva", "BBVA", 1, "Cuentas y tarjetas BBVA", "CSV, Excel (.xlsx, .xls)", "indigo"),
+        ("openbank", "Openbank", 1, "Cuentas corrientes y tarjetas Openbank", "CSV, Excel (.xlsx, .xls)", "rose"),
+        ("amex", "American Express", 1, "Tarjetas Amex (Platinum, Gold, etc.) con normalización de signos", "CSV, Excel (.xlsx, .xls)", "blue"),
+        ("iberia_cards", "Iberia Cards", 1, "Tarjetas Iberia Icon Visa / Mastercard", "CSV, Excel (.xlsx, .xls)", "amber"),
+        ("n26", "N26", 1, "Cuentas bancarias N26 (fechas seriales y multidivisa)", "CSV, Excel (.xlsx, .xls)", "teal"),
+        ("myinvestor", "MyInvestor", 1, "Cuentas de inversión, fondos indexados y efectivo", "CSV, Excel (.xlsx, .xls)", "purple"),
+        ("generic", "Formato Genérico", 1, "Cualquier extracto con columnas Fecha, Concepto e Importe", "CSV, Excel (.xlsx, .xls)", "gray"),
+    ]
+    cursor.executemany("""
+    INSERT OR IGNORE INTO supported_banks (id, name, enabled, description, file_formats, badge_color)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, default_banks)
 
     # Default general user settings
     default_settings = [

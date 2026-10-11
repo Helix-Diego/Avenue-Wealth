@@ -1,5 +1,5 @@
 import re
-from backend.database import get_connection
+from backend.database import get_connection, get_setting
 from backend.knowledge_base import match_knowledge_base, get_few_shots_for_ai, DIEGO_CATEGORIES
 from backend.deepseek_service import categorize_with_ai
 
