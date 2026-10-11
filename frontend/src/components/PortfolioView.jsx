@@ -1063,6 +1063,30 @@ export default function PortfolioView({
       {/* SUBTAB 2: PLANIFICADOR DE OBJETIVOS & ADAPTACIÓN DE HÁBITOS (NEW FEATURE) */}
       {/* ========================================================================= */}
       {activeSubTab === 'habits_goals' && (
+        (!habitsData?.categories || habitsData.categories.length === 0) ? (
+          <div className="p-10 rounded-2xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-sm text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-3xl">
+              🎯
+            </div>
+            <div className="max-w-md mx-auto space-y-2">
+              <h3 className="text-base font-bold text-neutral-900 dark:text-white">
+                Aún no hay transacciones para analizar tus hábitos de ahorro
+              </h3>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                El planificador financiero analiza tus movimientos reales de los últimos meses para detectar qué categorías puedes recortar (restaurantes, suscripciones, compras no esenciales) sin mermar tu calidad de vida y proyectar tu meta patrimonial.
+              </p>
+            </div>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setActiveTab && setActiveTab('import')}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-xs inline-flex items-center space-x-2 cursor-pointer transition-all"
+              >
+                <span>Importar Primeros Extractos Bancarios →</span>
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="space-y-6">
           {/* Header Banner */}
           <div className="p-5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-2">
@@ -1474,6 +1498,7 @@ export default function PortfolioView({
             </div>
           </div>
         </div>
+        )
       )}
 
       {/* ========================================================================= */}

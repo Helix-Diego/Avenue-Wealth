@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from backend.database import (
-    get_connection, init_db, backup_db, restore_db, DB_PATH, sync_realtime_account_balances,
+    get_connection, init_db, backup_db, restore_db, get_db_path, DB_PATH, sync_realtime_account_balances,
     get_all_settings, get_setting, set_setting, get_categories_list,
     add_category, update_category, delete_category, get_supported_banks,
     update_bank_enabled, update_bank_alias, update_bank_details,
@@ -343,8 +343,9 @@ def get_backup_info():
         tx_count = c.fetchone()[0]
         conn.close()
 
-        size_bytes = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
-        mod_time = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).isoformat() if os.path.exists(DB_PATH) else None
+        curr_db_path = get_db_path()
+        size_bytes = os.path.getsize(curr_db_path) if os.path.exists(curr_db_path) else 0
+        mod_time = datetime.fromtimestamp(os.path.getmtime(curr_db_path)).isoformat() if os.path.exists(curr_db_path) else None
 
         if size_bytes >= 1024 * 1024:
             size_formatted = f"{size_bytes / (1024 * 1024):.1f} MB"
@@ -352,12 +353,12 @@ def get_backup_info():
             size_formatted = f"{max(1, size_bytes // 1024)} KB"
 
         return {
-            "db_path": DB_PATH,
+            "db_path": curr_db_path,
             "size_bytes": size_bytes,
             "size_formatted": size_formatted,
             "last_modified": mod_time,
             "transactions_count": tx_count,
-            "is_application_support": "Application Support" in DB_PATH or ".spendagent" in DB_PATH
+            "is_application_support": "Application Support" in curr_db_path or ".spendagent" in curr_db_path
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

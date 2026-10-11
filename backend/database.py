@@ -60,11 +60,15 @@ def resolve_db_path():
 
     return user_db_path
 
+def get_db_path():
+    return resolve_db_path()
+
 DB_PATH = resolve_db_path()
 
 def get_connection():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, timeout=30.0, check_same_thread=False)
+    db_file = resolve_db_path()
+    os.makedirs(os.path.dirname(db_file), exist_ok=True)
+    conn = sqlite3.connect(db_file, timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
@@ -77,7 +81,8 @@ def backup_db():
     """
     Creates an atomic rolling backup of bank_agent.db to backups/
     """
-    backup_dir = os.path.join(os.path.dirname(DB_PATH), "backups")
+    db_file = resolve_db_path()
+    backup_dir = os.path.join(os.path.dirname(db_file), "backups")
     os.makedirs(backup_dir, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_file = os.path.join(backup_dir, f"bank_agent_{timestamp}.db")
@@ -96,14 +101,15 @@ def restore_db(file_bytes: bytes) -> bool:
     """
     Safely restores bank_agent.db from uploaded bytes after verifying SQLite validity.
     """
+    db_file = resolve_db_path()
     backup_db()
-    temp_path = DB_PATH + ".restore_tmp"
+    temp_path = db_file + ".restore_tmp"
     with open(temp_path, "wb") as f:
         f.write(file_bytes)
     test_conn = sqlite3.connect(temp_path)
     test_conn.execute("SELECT count(*) FROM sqlite_master")
     test_conn.close()
-    os.replace(temp_path, DB_PATH)
+    os.replace(temp_path, db_file)
     init_db()
     return True
 
@@ -639,6 +645,8 @@ def clean_all_transactions(keep_settings: bool = True):
     cursor.execute("DELETE FROM bank_accounts")
     cursor.execute("DELETE FROM fund_info")
     cursor.execute("UPDATE supported_banks SET enabled = 0")
+    # Always delete forecast and savings targets so the app comes 100% empty
+    cursor.execute("DELETE FROM user_settings WHERE key LIKE 'forecast_%' OR key = 'monthly_salary_target'")
     if not keep_settings:
         cursor.execute("DELETE FROM user_settings WHERE key NOT IN ('deepseek_api_key', 'finnhub_api_key')")
     conn.commit()
