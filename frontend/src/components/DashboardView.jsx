@@ -56,7 +56,8 @@ export default function DashboardView({
   setActiveTab, 
   selectedMonth, 
   setSelectedMonth,
-  darkMode
+  darkMode,
+  enableCompanyExpenses = true
 }) {
   const [activeViewMode, setActiveViewMode] = useState('overview'); // 'overview' | 'balance_excel' | 'wealth'
   const [balanceMatrix, setBalanceMatrix] = useState(null);
@@ -291,10 +292,12 @@ export default function DashboardView({
     }
 
     // Reimbursable Company
-    rows.push("=== GASTOS DE EMPRESA (BMC) ===");
-    rows.push(formatRow(balanceMatrix.company_reimbursements.outlays.name, balanceMatrix.company_reimbursements.outlays.by_month, 0, balanceMatrix.company_reimbursements.outlays.total));
-    rows.push(formatRow(balanceMatrix.company_reimbursements.received.name, balanceMatrix.company_reimbursements.received.by_month, 0, balanceMatrix.company_reimbursements.received.total));
-    rows.push("");
+    if (enableCompanyExpenses && balanceMatrix.company_reimbursements?.outlays) {
+      rows.push("=== GASTOS DE EMPRESA ===");
+      rows.push(formatRow(balanceMatrix.company_reimbursements.outlays.name, balanceMatrix.company_reimbursements.outlays.by_month, 0, balanceMatrix.company_reimbursements.outlays.total));
+      rows.push(formatRow(balanceMatrix.company_reimbursements.received.name, balanceMatrix.company_reimbursements.received.by_month, 0, balanceMatrix.company_reimbursements.received.total));
+      rows.push("");
+    }
 
     // Results
     rows.push("=== RESULTADO Y AHORRO ===");
@@ -1060,20 +1063,20 @@ export default function DashboardView({
             </div>
           </div>
 
-          {/* 3. Executive KPI Metric Strip (Aprovechar espacios en blanco horizontalmente) */}
-          {balanceMatrix && balanceMatrix.income && (
+          {/* 3. Executive KPI Metric Strip */}
+          {balanceMatrix && balanceMatrix.income && balanceMatrix.income.total && balanceMatrix.months?.length > 0 && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {/* Total Ingresos */}
               <div className="p-3.5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-1">
                 <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
-                  <span className="font-medium">Total Ingresos ({balanceMatrix.months.length}m)</span>
+                  <span className="font-medium">Total Ingresos ({balanceMatrix.months?.length || 0}m)</span>
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
                 </div>
                 <div className="text-lg font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                  {balanceMatrix.income.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                  {(balanceMatrix.income?.total?.total || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                 </div>
                 <div className="text-[11px] text-neutral-400 font-mono">
-                  Media: {balanceMatrix.income.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
+                  Media: {(balanceMatrix.income?.total?.average || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
                 </div>
               </div>
 
@@ -1084,10 +1087,10 @@ export default function DashboardView({
                   <span className="w-2 h-2 rounded-full bg-rose-500" />
                 </div>
                 <div className="text-lg font-bold text-rose-600 dark:text-rose-400 font-mono">
-                  {balanceMatrix.personal_expenses.total.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                  {(balanceMatrix.personal_expenses?.total?.total || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                 </div>
                 <div className="text-[11px] text-neutral-400 font-mono">
-                  Media: {balanceMatrix.personal_expenses.total.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
+                  Media: {(balanceMatrix.personal_expenses?.total?.average || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
                 </div>
               </div>
 
@@ -1095,13 +1098,13 @@ export default function DashboardView({
               <div className="p-3.5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-1">
                 <div className="flex items-center justify-between text-xs text-neutral-500 dark:text-neutral-400">
                   <span className="font-medium">Ahorro Neto Acumulado</span>
-                  <span className={`w-2 h-2 rounded-full ${balanceMatrix.results.net_savings.total >= 0 ? 'bg-indigo-500' : 'bg-amber-500'}`} />
+                  <span className={`w-2 h-2 rounded-full ${(balanceMatrix.results?.net_savings?.total || 0) >= 0 ? 'bg-indigo-500' : 'bg-amber-500'}`} />
                 </div>
-                <div className={`text-lg font-bold font-mono ${balanceMatrix.results.net_savings.total >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                  {balanceMatrix.results.net_savings.total >= 0 ? '+' : ''}{balanceMatrix.results.net_savings.total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                <div className={`text-lg font-bold font-mono ${(balanceMatrix.results?.net_savings?.total || 0) >= 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                  {(balanceMatrix.results?.net_savings?.total || 0) >= 0 ? '+' : ''}{(balanceMatrix.results?.net_savings?.total || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
                 </div>
                 <div className="text-[11px] text-neutral-400 font-mono">
-                  Media: {balanceMatrix.results.net_savings.average.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
+                  Media: {(balanceMatrix.results?.net_savings?.average || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} € / mes
                 </div>
               </div>
 
@@ -1112,19 +1115,34 @@ export default function DashboardView({
                   <span className="text-[11px] text-indigo-500 font-semibold">% retención</span>
                 </div>
                 <div className="text-lg font-bold text-neutral-900 dark:text-white font-mono">
-                  {balanceMatrix.results.savings_rate.average}%
+                  {balanceMatrix.results?.savings_rate?.average || 0}%
                 </div>
                 <div className="text-[11px] text-neutral-400">
-                  {balanceMatrix.personal_expenses.rows.length} categorías de consumo
+                  {balanceMatrix.personal_expenses?.rows?.length || 0} categorías de consumo
                 </div>
               </div>
             </div>
           )}
 
-          {/* 4. Full-Width Wide Table (Hacer la tabla más ancha y espaciosa) */}
+          {/* 4. Full-Width Wide Table */}
           {loadingMatrix || !balanceMatrix ? (
             <div className="p-12 text-center text-xs text-neutral-400 bg-white dark:bg-[#202020] rounded-xl border border-neutral-200 dark:border-neutral-800">
               Cargando matriz financiera...
+            </div>
+          ) : (!balanceMatrix.months || balanceMatrix.months.length === 0) ? (
+            <div className="p-12 text-center bg-white dark:bg-[#202020] rounded-xl border border-neutral-200 dark:border-neutral-800 space-y-3">
+              <div className="text-3xl">📊</div>
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-200">Sin movimientos registrados aún</h3>
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-md mx-auto">
+                La matriz financiera mensual se construirá automáticamente al importar tus extractos bancarios o añadir transacciones.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActiveTab('import')}
+                className="mt-2 inline-flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer shadow-xs"
+              >
+                <span>Importar extractos bancarios</span>
+              </button>
             </div>
           ) : (
             <div className="bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 rounded-xl shadow-xs overflow-hidden">
@@ -1343,7 +1361,7 @@ export default function DashboardView({
                     )}
 
                     {/* SECTION 5: GASTOS DE TRABAJO REEMBOLSABLES */}
-                    {hasCompanyOutlaysMatch && balanceMatrix.company_reimbursements && balanceMatrix.company_reimbursements.has_data && (
+                    {enableCompanyExpenses && hasCompanyOutlaysMatch && balanceMatrix.company_reimbursements && balanceMatrix.company_reimbursements.has_data && (
                       <>
                         <tr className="bg-sky-50/70 dark:bg-sky-950/20 text-sky-900 dark:text-sky-300 font-bold text-xs">
                           <td colSpan={balanceMatrix.months.length + 3} className="py-2.5 px-4 tracking-wide uppercase text-[10.5px] sticky left-0">

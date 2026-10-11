@@ -327,10 +327,13 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
             }
 
     # Step 0: Bank Category matching (e.g. from American Express CSV)
+    is_company_enabled = get_setting("enable_company_expenses", "1") == "1"
+    company_name = get_setting("company_name", "") or "tu empresa"
+
     if bank_category and bank_category in AMEX_CATEGORY_MAP:
         cat = AMEX_CATEGORY_MAP[bank_category]
         is_potentially_company = any(kw in desc_upper for kw in COMPANY_AMBIGUOUS_KEYWORDS)
-        if is_potentially_company and cat in ["Gasolina", "Parking/Peajes/Ubers", "Gastos Viajes", "Vuelos", "Restaurantes"]:
+        if is_company_enabled and is_potentially_company and cat in ["Gasolina", "Parking/Peajes/Ubers", "Gastos Viajes", "Vuelos", "Restaurantes"]:
             if any(w in desc_upper for w in ["CLIENTE", "CUSTOMER", "BMC", "TRABAJO"]):
                 return {
                     "category": cat,
@@ -359,8 +362,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
 
     if kb_match:
         cat = kb_match["category"]
-        # If it's gasoline or travel/dinner and amount is significant, ask if it was for BMC
-        if is_potentially_company and cat in ["Gasolina", "Parking/Peajes/Ubers", "Gastos Viajes", "Vuelos", "Restaurantes"]:
+        if is_company_enabled and is_potentially_company and cat in ["Gasolina", "Parking/Peajes/Ubers", "Gastos Viajes", "Vuelos", "Restaurantes"]:
             if any(w in desc_upper for w in ["CLIENTE", "CUSTOMER", "BMC", "TRABAJO"]):
                 return {
                     "category": cat,
@@ -370,7 +372,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
                     "clarification_question": None,
                     "suggested_category": cat,
                     "confidence": 0.98,
-                    "notes": "Gasto de empresa detectado automáticamente (BMC / Cliente)"
+                    "notes": f"Gasto de empresa detectado automáticamente ({company_name})"
                 }
             
             return {
@@ -378,10 +380,10 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
                 "is_reimbursable": 0,
                 "reimbursement_status": "none",
                 "needs_clarification": 1,
-                "clarification_question": f"Pago de {abs(amount):.2f}€ en '{description}'. ¿Es un gasto personal o corresponde a un desplazamiento de empresa a reembolsar por BMC?",
+                "clarification_question": f"Pago de {abs(amount):.2f}€ en '{description}'. ¿Es un gasto personal o corresponde a un desplazamiento a reembolsar por {company_name}?",
                 "suggested_category": cat,
                 "confidence": 0.70,
-                "notes": f"Reconocido en KB como '{cat}', pero puede ser adelanto a BMC"
+                "notes": f"Reconocido en KB como '{cat}', pero puede ser adelanto a {company_name}"
             }
 
         return {
@@ -405,7 +407,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
         chosen_category = "Otras compras"
 
 
-    is_reimb = ai_result.get("is_reimbursable", 0)
+    is_reimb = ai_result.get("is_reimbursable", 0) if is_company_enabled else 0
     needs_clarif = 1 if ai_result.get("needs_clarification") else 0
     question = ai_result.get("clarification_question")
     confidence = ai_result.get("confidence", 0.75)

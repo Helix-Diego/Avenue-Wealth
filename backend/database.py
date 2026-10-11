@@ -275,19 +275,19 @@ def init_db():
         VALUES (?, ?, ?, ?)
         """, default_categories)
 
-    # Seed default supported banks
+    # Seed default supported banks (disabled by default, user must enable their banks)
     default_banks = [
-        ("santander", "Banco Santander", 1, "Cuentas corrientes y tarjetas de crédito/débito", "CSV, Excel (.xlsx, .xls)", "red"),
-        ("caixabank", "CaixaBank", 1, "Cuentas corrientes y tarjetas CaixaBank (formato con saldo y divisa)", "CSV, Excel (.xlsx, .xls)", "blue"),
-        ("revolut", "Revolut", 1, "Cuentas Revolut multidivisa (EUR, CHF, USD) y pagos con tarjeta", "CSV, Excel (.xlsx, .xls)", "teal"),
-        ("ing", "ING Direct", 1, "Cuentas corrientes, nómina y tarjetas ING (F. VALOR, IMPORTE)", "CSV, Excel (.xlsx, .xls)", "orange"),
-        ("bbva", "BBVA", 1, "Cuentas y tarjetas BBVA", "CSV, Excel (.xlsx, .xls)", "indigo"),
-        ("openbank", "Openbank", 1, "Cuentas corrientes y tarjetas Openbank", "CSV, Excel (.xlsx, .xls)", "rose"),
-        ("amex", "American Express", 1, "Tarjetas Amex (Platinum, Gold, etc.) con normalización de signos", "CSV, Excel (.xlsx, .xls)", "blue"),
-        ("iberia_cards", "Iberia Cards", 1, "Tarjetas Iberia Icon Visa / Mastercard", "CSV, Excel (.xlsx, .xls)", "amber"),
-        ("n26", "N26", 1, "Cuentas bancarias N26 (fechas seriales y multidivisa)", "CSV, Excel (.xlsx, .xls)", "teal"),
-        ("myinvestor", "MyInvestor", 1, "Cuentas de inversión, fondos indexados y efectivo", "CSV, Excel (.xlsx, .xls)", "purple"),
-        ("generic", "Formato Genérico", 1, "Cualquier extracto con columnas Fecha, Concepto e Importe", "CSV, Excel (.xlsx, .xls)", "gray"),
+        ("santander", "Banco Santander", 0, "Cuentas corrientes y tarjetas de crédito/débito", "CSV, Excel (.xlsx, .xls)", "red"),
+        ("caixabank", "CaixaBank", 0, "Cuentas corrientes y tarjetas CaixaBank (formato con saldo y divisa)", "CSV, Excel (.xlsx, .xls)", "blue"),
+        ("revolut", "Revolut", 0, "Cuentas Revolut multidivisa (EUR, CHF, USD) y pagos con tarjeta", "CSV, Excel (.xlsx, .xls)", "teal"),
+        ("ing", "ING Direct", 0, "Cuentas corrientes, nómina y tarjetas ING (F. VALOR, IMPORTE)", "CSV, Excel (.xlsx, .xls)", "orange"),
+        ("bbva", "BBVA", 0, "Cuentas y tarjetas BBVA", "CSV, Excel (.xlsx, .xls)", "indigo"),
+        ("openbank", "Openbank", 0, "Cuentas corrientes y tarjetas Openbank", "CSV, Excel (.xlsx, .xls)", "rose"),
+        ("amex", "American Express", 0, "Tarjetas Amex (Platinum, Gold, etc.) con normalización de signos", "CSV, Excel (.xlsx, .xls)", "blue"),
+        ("iberia_cards", "Iberia Cards", 0, "Tarjetas Iberia Icon Visa / Mastercard", "CSV, Excel (.xlsx, .xls)", "amber"),
+        ("n26", "N26", 0, "Cuentas bancarias N26 (fechas seriales y multidivisa)", "CSV, Excel (.xlsx, .xls)", "teal"),
+        ("myinvestor", "MyInvestor", 0, "Cuentas de inversión, fondos indexados y efectivo", "CSV, Excel (.xlsx, .xls)", "purple"),
+        ("generic", "Formato Genérico", 0, "Cualquier extracto con columnas Fecha, Concepto e Importe", "CSV, Excel (.xlsx, .xls)", "gray"),
     ]
     cursor.executemany("""
     INSERT OR IGNORE INTO supported_banks (id, name, enabled, description, file_formats, badge_color)
@@ -382,12 +382,6 @@ def init_db():
             "INSERT OR IGNORE INTO category_rules (pattern, category, is_reimbursable, priority) VALUES (?, ?, ?, ?)",
             default_rules
         )
-
-    # Initialize fund info for IE00BYX5P602
-    cursor.execute("""
-    INSERT OR IGNORE INTO fund_info (isin, name, total_shares, latest_nav, currency, last_updated)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, ("IE00BYX5P602", "Fidelity MSCI World Index Fund P-ACC-EUR", 0.0, 12.10, "EUR", datetime.now().isoformat()))
 
     conn.commit()
     conn.close()
@@ -577,7 +571,8 @@ def clean_all_transactions(keep_settings: bool = True):
     cursor.execute("DELETE FROM fund_contributions")
     cursor.execute("DELETE FROM portfolio_stocks")
     cursor.execute("DELETE FROM bank_accounts")
-    cursor.execute("UPDATE fund_info SET total_shares = 0.0, last_updated = datetime('now')")
+    cursor.execute("DELETE FROM fund_info")
+    cursor.execute("UPDATE supported_banks SET enabled = 0")
     if not keep_settings:
         cursor.execute("DELETE FROM user_settings WHERE key NOT IN ('deepseek_api_key', 'finnhub_api_key')")
     conn.commit()

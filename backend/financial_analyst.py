@@ -143,7 +143,35 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
     months = [r[0] for r in cursor.fetchall() if r[0]]
     if not months:
         conn.close()
-        return {"months": [], "income": {}, "personal_expenses": {}, "card_settlements": {}, "company_reimbursements": {}, "results": {}}
+        return {
+            "months": [],
+            "income": {
+                "rows": [],
+                "total": {"name": "Total Ingresos", "by_month": {}, "total": 0.0, "average": 0.0}
+            },
+            "personal_expenses": {
+                "rows": [],
+                "total": {"name": "Total Gastos Personales", "by_month": {}, "total": 0.0, "average": 0.0}
+            },
+            "card_settlements": {
+                "rows": [],
+                "total": {"name": "Total Liquidaciones Tarjetas", "by_month": {}, "total": 0.0, "average": 0.0}
+            },
+            "internal_transfers": {
+                "rows": [],
+                "total": {"name": "Total Traspasos Entre Cuentas", "by_month": {}, "total": 0.0, "average": 0.0}
+            },
+            "company_reimbursements": {
+                "has_data": False,
+                "outlays": {"name": "Gastos Reembolsables Pagados", "by_month": {}, "total": 0.0},
+                "received": {"name": "Reembolsos Cobrados", "by_month": {}, "total": 0.0}
+            },
+            "results": {
+                "net_savings": {"name": "Ahorro Neto Real", "by_month": {}, "total": 0.0, "average": 0.0},
+                "savings_rate": {"name": "Tasa de Ahorro (%)", "by_month": {}, "average": 0.0},
+                "wealth_evolution": []
+            }
+        }
 
     # 1. Income rows (strictly true income, never Bizums repaying dinner/expenses)
     cursor.execute("""

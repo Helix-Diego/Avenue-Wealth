@@ -82,7 +82,8 @@ export default function TransactionsView({
   setSelectedMonth,
   availableMonths,
   darkMode,
-  onTriggerUndo
+  onTriggerUndo,
+  enableCompanyExpenses = true
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAccount, setSelectedAccount] = useState('all');
@@ -715,26 +716,28 @@ export default function TransactionsView({
             </div>
 
             {/* Filter Tipo: Personal vs Empresa */}
-            <div className="flex items-center space-x-1.5">
-              <span className="text-[#787774]">Tipo:</span>
-              <select
-                value={reimbursementFilter}
-                onChange={(e) => setReimbursementFilter(e.target.value)}
-                className={`text-xs px-2.5 py-1 rounded-md border outline-none font-medium cursor-pointer transition-colors ${
-                  reimbursementFilter === 'all'
-                    ? 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
-                    : reimbursementFilter === 'personal_only'
-                    ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 border-neutral-900 dark:border-neutral-100 font-semibold'
-                    : 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-800 font-semibold'
-                }`}
-              >
-                <option value="all">🌐 Todos (Extracto banco)</option>
-                <option value="personal_only">👤 Solo Personales (Ocultar Empresa)</option>
-                <option value="company_all">💼 Gastos de Empresa (Todos)</option>
-                <option value="company_pending">⏳ Empresa (Solo Pendientes de Cobro)</option>
-                <option value="company_reimbursed">✅ Empresa (Solo Cobrados / Reembolsados)</option>
-              </select>
-            </div>
+            {enableCompanyExpenses && (
+              <div className="flex items-center space-x-1.5">
+                <span className="text-[#787774]">Tipo:</span>
+                <select
+                  value={reimbursementFilter}
+                  onChange={(e) => setReimbursementFilter(e.target.value)}
+                  className={`text-xs px-2.5 py-1 rounded-md border outline-none font-medium cursor-pointer transition-colors ${
+                    reimbursementFilter === 'all'
+                      ? 'bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-700'
+                      : reimbursementFilter === 'personal_only'
+                      ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 border-neutral-900 dark:border-neutral-100 font-semibold'
+                      : 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border-sky-300 dark:border-sky-800 font-semibold'
+                  }`}
+                >
+                  <option value="all">🌐 Todos (Extracto banco)</option>
+                  <option value="personal_only">👤 Solo Personales (Ocultar Empresa)</option>
+                  <option value="company_all">💼 Gastos de Empresa (Todos)</option>
+                  <option value="company_pending">⏳ Empresa (Solo Pendientes de Cobro)</option>
+                  <option value="company_reimbursed">✅ Empresa (Solo Cobrados / Reembolsados)</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center space-x-3 text-[11px] text-[#787774]">
@@ -779,7 +782,7 @@ export default function TransactionsView({
                 <th className="py-2.5 px-3 w-40">Cuenta / Tarjeta</th>
                 <th className="py-2.5 px-3">Concepto / Comercio</th>
                 <th className="py-2.5 px-3 w-48">Categoría</th>
-                <th className="py-2.5 px-3 w-36">Gasto Empresa</th>
+                {enableCompanyExpenses && <th className="py-2.5 px-3 w-36">Gasto Empresa</th>}
                 <th className="py-2.5 px-3 text-right w-28">Importe</th>
                 <th className="py-2.5 px-3 text-center w-16">Acciones</th>
               </tr>
@@ -787,7 +790,7 @@ export default function TransactionsView({
             <tbody className="divide-y divide-[#f2f2f0] dark:divide-[#2c2c2c]">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-neutral-400">
+                  <td colSpan={enableCompanyExpenses ? 8 : 7} className="py-8 text-center text-neutral-400">
                     No se encontraron transacciones con los filtros seleccionados.
                   </td>
                 </tr>
@@ -951,32 +954,34 @@ export default function TransactionsView({
                       </td>
 
                       {/* Gasto de Empresa vs Personal */}
-                      <td className="py-2.5 px-3">
-                        <select
-                          value={tx.is_reimbursable === 1 ? (tx.reimbursement_status === 'reimbursed' ? 'reimbursed' : 'pending') : 'personal'}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            if (val === 'personal') {
-                              onUpdateTransaction(tx.id, { is_reimbursable: 0, reimbursement_status: 'none' });
-                            } else if (val === 'pending') {
-                              onUpdateTransaction(tx.id, { is_reimbursable: 1, reimbursement_status: 'pending' });
-                            } else if (val === 'reimbursed') {
-                              onUpdateTransaction(tx.id, { is_reimbursable: 1, reimbursement_status: 'reimbursed' });
-                            }
-                          }}
-                          className={`text-[10.5px] font-medium px-2 py-1 rounded-md border outline-none cursor-pointer transition-colors ${
-                            tx.is_reimbursable === 1
-                              ? (tx.reimbursement_status === 'reimbursed'
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                                  : 'bg-sky-50 text-sky-800 border-sky-300 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 font-semibold')
-                              : 'bg-neutral-50 text-neutral-600 border-neutral-200 dark:bg-neutral-800/80 dark:text-neutral-400 dark:border-neutral-700'
-                          }`}
-                        >
-                          <option value="personal">👤 Personal</option>
-                          <option value="pending">💼 Empresa (Pendiente)</option>
-                          <option value="reimbursed">✅ Empresa (Cobrado)</option>
-                        </select>
-                      </td>
+                      {enableCompanyExpenses && (
+                        <td className="py-2.5 px-3">
+                          <select
+                            value={tx.is_reimbursable === 1 ? (tx.reimbursement_status === 'reimbursed' ? 'reimbursed' : 'pending') : 'personal'}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (val === 'personal') {
+                                onUpdateTransaction(tx.id, { is_reimbursable: 0, reimbursement_status: 'none' });
+                              } else if (val === 'pending') {
+                                onUpdateTransaction(tx.id, { is_reimbursable: 1, reimbursement_status: 'pending' });
+                              } else if (val === 'reimbursed') {
+                                onUpdateTransaction(tx.id, { is_reimbursable: 1, reimbursement_status: 'reimbursed' });
+                              }
+                            }}
+                            className={`text-[10.5px] font-medium px-2 py-1 rounded-md border outline-none cursor-pointer transition-colors ${
+                              tx.is_reimbursable === 1
+                                ? (tx.reimbursement_status === 'reimbursed'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                                    : 'bg-sky-50 text-sky-800 border-sky-300 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 font-semibold')
+                                : 'bg-neutral-50 text-neutral-600 border-neutral-200 dark:bg-neutral-800/80 dark:text-neutral-400 dark:border-neutral-700'
+                            }`}
+                          >
+                            <option value="personal">👤 Personal</option>
+                            <option value="pending">💼 Empresa (Pendiente)</option>
+                            <option value="reimbursed">✅ Empresa (Cobrado)</option>
+                          </select>
+                        </td>
+                      )}
 
                       {/* Importe */}
                       <td className={`py-2.5 px-3 text-right font-mono font-semibold whitespace-nowrap ${
@@ -1055,40 +1060,43 @@ export default function TransactionsView({
             </button>
           </div>
 
-          <div className="h-5 w-px bg-neutral-700 hidden sm:block" />
-
           {/* Quick Mark Empresa / Personal */}
-          <div className="flex items-center space-x-1.5">
-            <button
-              type="button"
-              onClick={() => handleApplyBatchReimbursable(1, 'pending')}
-              disabled={batchOperating}
-              className="px-2.5 py-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-900/80 text-sky-200 border border-sky-700/60 text-xs font-medium flex items-center space-x-1 cursor-pointer transition-colors disabled:opacity-50"
-              title="Marcar como gasto reembolsable de empresa pendiente de cobro"
-            >
-              <Briefcase className="w-3 h-3 text-sky-400" />
-              <span>Empresa (Pendiente)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleApplyBatchReimbursable(1, 'reimbursed')}
-              disabled={batchOperating}
-              className="px-2 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-200 border border-emerald-700/60 text-xs font-medium flex items-center space-x-1 cursor-pointer transition-colors disabled:opacity-50"
-              title="Marcar como gasto de empresa ya cobrado/reembolsado"
-            >
-              <Check className="w-3 h-3 text-emerald-400" />
-              <span>Cobrado</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleApplyBatchReimbursable(0, 'none')}
-              disabled={batchOperating}
-              className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 text-xs font-medium cursor-pointer transition-colors disabled:opacity-50"
-              title="Marcar como gasto personal"
-            >
-              <span>Personal</span>
-            </button>
-          </div>
+          {enableCompanyExpenses && (
+            <>
+              <div className="h-5 w-px bg-neutral-700 hidden sm:block" />
+              <div className="flex items-center space-x-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleApplyBatchReimbursable(1, 'pending')}
+                  disabled={batchOperating}
+                  className="px-2.5 py-1.5 rounded-lg bg-sky-950/70 hover:bg-sky-900/80 text-sky-200 border border-sky-700/60 text-xs font-medium flex items-center space-x-1 cursor-pointer transition-colors disabled:opacity-50"
+                  title="Marcar como gasto reembolsable de empresa pendiente de cobro"
+                >
+                  <Briefcase className="w-3 h-3 text-sky-400" />
+                  <span>Empresa (Pendiente)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyBatchReimbursable(1, 'reimbursed')}
+                  disabled={batchOperating}
+                  className="px-2 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-200 border border-emerald-700/60 text-xs font-medium flex items-center space-x-1 cursor-pointer transition-colors disabled:opacity-50"
+                  title="Marcar como gasto de empresa ya cobrado/reembolsado"
+                >
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Cobrado</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApplyBatchReimbursable(0, 'none')}
+                  disabled={batchOperating}
+                  className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 border border-neutral-700 text-xs font-medium cursor-pointer transition-colors disabled:opacity-50"
+                  title="Marcar como gasto personal"
+                >
+                  <span>Personal</span>
+                </button>
+              </div>
+            </>
+          )}
 
           <div className="h-5 w-px bg-neutral-700 hidden sm:block" />
 

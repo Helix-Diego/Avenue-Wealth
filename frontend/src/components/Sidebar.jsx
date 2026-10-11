@@ -25,7 +25,8 @@ export default function Sidebar({
   darkMode, 
   setDarkMode,
   companyPending,
-  userName = 'Mi Espacio'
+  userName = 'Mi Espacio',
+  enableCompanyExpenses = true
 }) {
   const navItems = [
     { id: 'dashboard', label: 'Visión General', icon: LayoutDashboard },
@@ -45,13 +46,13 @@ export default function Sidebar({
     },
     { id: 'transactions', label: 'Transacciones', icon: CreditCard },
     { id: 'loans', label: 'Préstamos & Créditos', icon: Landmark },
-    { 
+    ...(enableCompanyExpenses ? [{ 
       id: 'company', 
       label: 'Gastos Reembolsables', 
       icon: Briefcase,
       badge: companyPending > 0 ? `${companyPending.toFixed(0)}€` : null,
       badgeColor: 'bg-sky-500 text-white'
-    },
+    }] : []),
     { id: 'portfolio', label: 'Portfolio & Capital', icon: TrendingUp },
     { id: 'forecast', label: 'Pronósticos & IA', icon: Sparkles },
     { id: 'import', label: 'Importar Extractos', icon: Upload },

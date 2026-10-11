@@ -71,6 +71,9 @@ export default function App() {
   // Undo System for mass changes & recommendations
   const [undoToast, setUndoToast] = useState(null);
 
+  // General settings state
+  const [enableCompanyExpenses, setEnableCompanyExpenses] = useState(true);
+
   // Modals
   const [isNewTxOpen, setIsNewTxOpen] = useState(false);
   const [isFundContributionOpen, setIsFundContributionOpen] = useState(false);
@@ -159,6 +162,13 @@ export default function App() {
       if (data) {
         if (data.user_name) {
           setUserName(data.user_name);
+        }
+        if (data.enable_company_expenses !== undefined) {
+          const compExp = data.enable_company_expenses !== '0' && data.enable_company_expenses !== false;
+          setEnableCompanyExpenses(compExp);
+          if (!compExp && activeTab === 'company') {
+            setActiveTab('dashboard');
+          }
         }
         const hasCompletedLocal = localStorage.getItem('spend_agent_onboarding_completed') === 'true';
         if (!data.onboarding_completed && !hasCompletedLocal) {
@@ -303,7 +313,7 @@ export default function App() {
   };
 
   const capitalGlobal = summary?.portfolio?.capital_global;
-  const companyPending = summary?.portfolio?.pending_company_reimbursements || 0;
+  const companyPending = enableCompanyExpenses ? (summary?.portfolio?.pending_company_reimbursements || 0) : 0;
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#fbfbfa] dark:bg-[#191919] text-[#37352f] dark:text-[#d4d4d4] transition-colors duration-150">
@@ -317,6 +327,7 @@ export default function App() {
         setDarkMode={setDarkMode}
         companyPending={companyPending}
         userName={userName}
+        enableCompanyExpenses={enableCompanyExpenses}
       />
 
       {/* Main Content Area */}
@@ -328,6 +339,7 @@ export default function App() {
             selectedMonth={selectedMonth}
             setSelectedMonth={setSelectedMonth}
             darkMode={darkMode}
+            enableCompanyExpenses={enableCompanyExpenses}
           />
         )}
 
@@ -365,6 +377,7 @@ export default function App() {
             availableMonths={summary?.available_months || [selectedMonth]}
             darkMode={darkMode}
             onTriggerUndo={handleTriggerUndoToast}
+            enableCompanyExpenses={enableCompanyExpenses}
           />
         )}
 
@@ -374,7 +387,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'company' && (
+        {activeTab === 'company' && enableCompanyExpenses && (
           <CompanyExpensesView
             onRefreshSummary={() => fetchSummary()}
           />
@@ -418,6 +431,13 @@ export default function App() {
             onSettingsUpdated={(newSettings) => {
               if (newSettings?.user_name) {
                 setUserName(newSettings.user_name);
+              }
+              if (newSettings?.enable_company_expenses !== undefined) {
+                const compExp = newSettings.enable_company_expenses !== '0' && newSettings.enable_company_expenses !== false;
+                setEnableCompanyExpenses(compExp);
+                if (!compExp && activeTab === 'company') {
+                  setActiveTab('dashboard');
+                }
               }
               refreshAll();
             }}
