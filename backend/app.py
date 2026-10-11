@@ -1265,6 +1265,36 @@ def update_account_balance(req: AccountBalanceUpdate):
 
 # --- Forecast & Recommendations ---
 
+class ForecastSettingsUpdate(BaseModel):
+    expected_income: Optional[float] = None
+    target_savings: Optional[float] = None
+    budget_max: Optional[float] = None
+
+@app.get("/api/forecast/settings")
+def get_forecast_settings_endpoint():
+    settings = get_all_settings()
+    return {
+        "expected_income": float(settings.get("forecast_expected_income", 0.0) or 0.0),
+        "target_savings": float(settings.get("forecast_target_savings", 0.0) or 0.0),
+        "budget_max": float(settings.get("forecast_budget_max", 0.0) or 0.0),
+    }
+
+@app.post("/api/forecast/settings")
+def update_forecast_settings_endpoint(req: ForecastSettingsUpdate):
+    if req.expected_income is not None:
+        set_setting("forecast_expected_income", str(req.expected_income))
+    if req.target_savings is not None:
+        set_setting("forecast_target_savings", str(req.target_savings))
+    if req.budget_max is not None:
+        set_setting("forecast_budget_max", str(req.budget_max))
+    settings = get_all_settings()
+    return {
+        "status": "updated",
+        "expected_income": float(settings.get("forecast_expected_income", 0.0) or 0.0),
+        "target_savings": float(settings.get("forecast_target_savings", 0.0) or 0.0),
+        "budget_max": float(settings.get("forecast_budget_max", 0.0) or 0.0),
+    }
+
 @app.get("/api/forecast")
 def get_forecast(year: Optional[int] = None, month: Optional[int] = None):
     now = datetime.now()

@@ -64,6 +64,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
     2. DeepSeek Light model (with few-shot prompts and uncertainty detection)
     """
     desc_upper = description.upper().strip()
+    enable_comp = get_setting("enable_company_expenses", "1") == "1"
 
     # MyInvestor Specific Rules
     # 1. Period remuneration interest
@@ -143,26 +144,27 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
                 "notes": "Traspaso entre cuentas propias MyInvestor"
             }
 
-    # Rule 1: Special check for company reimbursement received (from BMC Helix)
+    # Rule 1: Salary and income recognition (General for any user/employer)
     if amount > 0:
-        if "BMC" in desc_upper:
-            if any(kw in desc_upper for kw in ["NOMINA", "SALARIO", "SUELDO"]):
-                return {
-                    "category": "Sueldo",
-                    "is_reimbursable": 0,
-                    "reimbursement_status": "none",
-                    "needs_clarification": 0,
-                    "clarification_question": None,
-                    "suggested_category": "Sueldo",
-                    "confidence": 1.0,
-                    "notes": "Nómina mensual de BMC Software"
-                }
-            elif any(kw in desc_upper for kw in ["EXPENSES", "REEMBOLSO", "MEETING", "CUSTOMER", "DIETAS", "LIQUIDACION", "COMMISIONS"]):
-                return {
-                    "category": "Gastos de Empresa",
-                    "is_reimbursable": 0,
-                    "reimbursement_status": "reimbursed",
-                    "needs_clarification": 0,
+        if any(kw in desc_upper for kw in ["NOMINA", "NÓMINA", "SALARIO", "SUELDO", "HABERES"]):
+            return {
+                "category": "Sueldo",
+                "is_reimbursable": 0,
+                "reimbursement_status": "none",
+                "needs_clarification": 0,
+                "clarification_question": None,
+                "suggested_category": "Sueldo",
+                "confidence": 0.98,
+                "notes": "Ingreso por nómina o salario"
+            }
+        
+        # Company reimbursement received check
+        if enable_comp and any(kw in desc_upper for kw in ["EXPENSES", "REEMBOLSO", "DIETAS EMPRESA", "LIQUIDACION GASTOS"]):
+            return {
+                "category": "Gastos de Empresa",
+                "is_reimbursable": 0,
+                "reimbursement_status": "reimbursed",
+                "needs_clarification": 0,
                     "clarification_question": None,
                     "suggested_category": "Gastos de Empresa",
                     "confidence": 0.99,

@@ -204,10 +204,10 @@ export default function ChatView({
     }
   ];
 
-  const capitalGlobal = profileData?.portfolio?.capital_global || 23062.47;
-  const liquidCash = profileData?.portfolio?.liquid_cash || 2191.76;
-  const msciValue = profileData?.portfolio?.fund?.total_value_eur || 17384.36;
-  const pendingReimb = profileData?.reimbursements?.pending_total || 465.10;
+  const capitalGlobal = profileData?.portfolio?.capital_global || 0;
+  const liquidCash = profileData?.portfolio?.liquid_cash || 0;
+  const msciValue = (profileData?.portfolio?.funds_summary?.total_value_eur ?? profileData?.portfolio?.fund?.total_value_eur) || 0;
+  const pendingReimb = profileData?.reimbursements?.pending_total || 0;
 
   return (
     <div className="max-w-5xl mx-auto flex flex-col h-[calc(100vh-4.5rem)] space-y-3">

@@ -246,10 +246,11 @@ export default function PortfolioView({
   };
 
   // -------------------------------------------------------------
-  // MSCI Compound Interest Simulator State
+  // Mutual Funds Compound Interest Simulator State
   // -------------------------------------------------------------
   const [monthlyContribution, setMonthlyContribution] = useState(300);
   const [annualReturnRate, setAnnualReturnRate] = useState(7.5);
+  const [selectedFundIsinForSim, setSelectedFundIsinForSim] = useState('');
 
   // -------------------------------------------------------------
   // Goals & Habits Adaptation Engine State
@@ -318,8 +319,12 @@ export default function PortfolioView({
   };
 
   // Compound Interest Simulation calculations (15 years)
+  const userFunds = Array.isArray(portfolio?.funds) ? portfolio.funds : [];
+  const hasUserFunds = userFunds.length > 0;
+  const activeFundForSim = userFunds.find(f => f.isin === selectedFundIsinForSim) || userFunds[0] || null;
+
   const simulationProjection = useMemo(() => {
-    const currentFundValue = Number(portfolio?.fund?.total_value_eur || summary?.portfolio?.fund?.total_value_eur || 17384.0);
+    const currentFundValue = activeFundForSim ? Number(activeFundForSim.total_value_eur || 0) : 0;
     const r = (annualReturnRate / 100) / 12;
     const points = [];
 
@@ -358,11 +363,11 @@ export default function PortfolioView({
       yr15,
       totalGrowth10: Math.max(0, (yr10.total || 0) - (yr10.invested || 0))
     };
-  }, [monthlyContribution, annualReturnRate, portfolio?.fund?.total_value_eur, summary?.portfolio?.fund?.total_value_eur]);
+  }, [monthlyContribution, annualReturnRate, activeFundForSim]);
 
   // Goal & Habit Calculations
   const goalCalculations = useMemo(() => {
-    const currentCap = habitsData?.current_capital ?? (portfolio?.capital_global || 22769.26);
+    const currentCap = habitsData?.current_capital ?? (portfolio?.capital_global || 0);
     const gap = Math.max(0, targetCapital - currentCap);
 
     let extraMonthly = 0;
@@ -530,7 +535,7 @@ export default function PortfolioView({
           }`}
         >
           <Calculator className="w-3.5 h-3.5 text-violet-500" />
-          <span>Simulador Interés Compuesto MSCI</span>
+          <span>Simulador Interés Compuesto</span>
         </button>
       </div>
 
@@ -1472,27 +1477,68 @@ export default function PortfolioView({
       )}
 
       {/* ========================================================================= */}
-      {/* SUBTAB 3: SIMULADOR DE INTERÉS COMPUESTO (FIDELITY MSCI WORLD) */}
+      {/* SUBTAB 3: SIMULADOR DE INTERÉS COMPUESTO (FONDOS DE INVERSIÓN) */}
       {/* ========================================================================= */}
       {activeSubTab === 'simulation' && (
-        <div className="space-y-6">
-          <div className="p-4 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-neutral-900 dark:text-white flex items-center gap-2">
-                <Calculator className="w-4 h-4 text-violet-500" />
-                <span>Simulador de Interés Compuesto — Fidelity MSCI World (IE00BYX5P602)</span>
-              </h2>
-              <p className="text-xs text-neutral-500 mt-0.5">
-                Proyección matemática de crecimiento patrimonial considerando tu cartera real ({fund.total_value_eur.toLocaleString('es-ES', { minimumFractionDigits: 0 })}€) y aportaciones periódicas
+        !hasUserFunds ? (
+          <div className="p-10 rounded-2xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-sm text-center space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-full bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center text-3xl">
+              📈
+            </div>
+            <div className="max-w-md mx-auto space-y-2">
+              <h3 className="text-base font-bold text-neutral-900 dark:text-white">
+                No tienes ningún fondo de inversión registrado
+              </h3>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                El simulador de interés compuesto proyecta la rentabilidad real sobre fondos de inversión indexados o de gestión activa que tengas en tu cartera. Para activar las simulaciones y proyectar aportaciones periódicas, primero da de alta un fondo de inversión.
               </p>
             </div>
-            <button
-              onClick={() => setActiveSubTab('overview')}
-              className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
-            >
-              Ver Cartera Real →
-            </button>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setIsAddFundModalOpen(true)}
+                className="px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold shadow-xs inline-flex items-center space-x-2 cursor-pointer transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Registrar Primer Fondo de Inversión</span>
+              </button>
+            </div>
           </div>
+        ) : (
+          <div className="space-y-6">
+            <div className="p-4 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-neutral-900 dark:text-white flex items-center gap-2">
+                  <Calculator className="w-4 h-4 text-violet-500" />
+                  <span>Simulador de Interés Compuesto — {activeFundForSim?.name || activeFundForSim?.isin}</span>
+                </h2>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Proyección matemática de crecimiento considerando tu saldo real ({Number(activeFundForSim?.total_value_eur || 0).toLocaleString('es-ES', { minimumFractionDigits: 0 })}€) y aportaciones periódicas
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-3 self-end sm:self-center">
+                {userFunds.length > 1 && (
+                  <select
+                    value={activeFundForSim?.isin || ''}
+                    onChange={(e) => setSelectedFundIsinForSim(e.target.value)}
+                    className="text-xs font-medium bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg px-2.5 py-1.5 outline-none cursor-pointer text-neutral-800 dark:text-neutral-200"
+                  >
+                    {userFunds.map(f => (
+                      <option key={f.isin} value={f.isin}>
+                        {f.name || f.isin} ({Number(f.total_value_eur || 0).toLocaleString('es-ES', { minimumFractionDigits: 0 })}€)
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  onClick={() => setActiveSubTab('overview')}
+                  className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
+                >
+                  Ver Cartera Real →
+                </button>
+              </div>
+            </div>
 
           {/* Interactive Simulator Controls */}
           <div className="p-5 rounded-xl bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-xs space-y-5">
@@ -1649,7 +1695,8 @@ export default function PortfolioView({
             </div>
           </div>
         </div>
-      )}
+      )
+    )}
 
       {/* Modal to Adjust Account Balance */}
       {editingAccount && (

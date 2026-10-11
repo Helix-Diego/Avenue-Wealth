@@ -411,6 +411,9 @@ export default function App() {
         {activeTab === 'forecast' && (
           <ForecastView
             forecast={summary?.forecast}
+            onRefresh={() => refreshAll(selectedMonth)}
+            enableCompanyExpenses={enableCompanyExpenses}
+            selectedMonth={selectedMonth}
           />
         )}
 

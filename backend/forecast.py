@@ -26,7 +26,63 @@ def calculate_monthly_forecast(year: int = None, month: int = None):
     """, (month_prefix,))
     txs = cursor.fetchall()
 
-    # Calculations
+    # Read user-configured forecast settings from database
+    cursor.execute("""
+    SELECT key, value FROM user_settings 
+    WHERE key IN ('forecast_expected_income', 'forecast_target_savings', 'forecast_budget_max', 'enable_company_expenses')
+    """)
+    settings_map = dict(cursor.fetchall())
+    expected_income = float(settings_map.get("forecast_expected_income", 0.0) or 0.0)
+    target_savings = float(settings_map.get("forecast_target_savings", 0.0) or 0.0)
+    budget_max = float(settings_map.get("forecast_budget_max", 0.0) or 0.0)
+    enable_comp = settings_map.get("enable_company_expenses", "1") != "0"
+
+    # Check if user has registered any mutual funds
+    cursor.execute("SELECT isin, name FROM fund_info LIMIT 1")
+    first_fund = cursor.fetchone()
+
+    tx_count = len(txs)
+    has_data = tx_count > 0
+    has_targets = (expected_income > 0 or target_savings > 0 or budget_max > 0)
+
+    # If no transactions in this month
+    if not has_data:
+        conn.close()
+        daily_safe = (budget_max / num_days) if budget_max > 0 else ((expected_income * 0.70 / num_days) if expected_income > 0 else 0.0)
+        proj_exp = budget_max if budget_max > 0 else 0.0
+        proj_sav = target_savings if target_savings > 0 else (max(0.0, expected_income - budget_max) if expected_income > 0 and budget_max > 0 else 0.0)
+        proj_rate = round((proj_sav / expected_income * 100), 1) if expected_income > 0 else 0.0
+
+        return {
+            "month": f"{year:04d}-{month:02d}",
+            "days_elapsed": days_elapsed,
+            "days_total": num_days,
+            "days_remaining": days_remaining,
+            "has_data": False,
+            "has_targets": has_targets,
+            "tx_count": 0,
+            "expected_income": round(expected_income, 2),
+            "target_savings": round(target_savings, 2),
+            "budget_max": round(budget_max, 2),
+            "total_income": 0.0,
+            "gross_expenses": 0.0,
+            "company_reimbursable_expenses": 0.0,
+            "company_reimbursements_received": 0.0,
+            "card_settlements_total": 0.0,
+            "investments_savings_total": 0.0,
+            "personal_expenses": 0.0,
+            "fixed_expenses": 0.0,
+            "variable_expenses": 0.0,
+            "daily_burn_rate": 0.0,
+            "projected_total_expenses": round(proj_exp, 2),
+            "projected_net_savings": round(proj_sav, 2),
+            "projected_savings_rate": proj_rate,
+            "daily_safe_spend": round(daily_safe, 2),
+            "category_breakdown": [],
+            "recommendations": []
+        }
+
+    # Calculations with real transactions
     total_income = 0.0
     gross_expenses = 0.0
     company_reimbursable_expenses = 0.0
@@ -52,8 +108,6 @@ def calculate_monthly_forecast(year: int = None, month: int = None):
             elif cat in ["Sueldo", "Ingresos / Nómina", "Otros ingresos"]:
                 total_income += amt
             else:
-                # Positive amount in a personal expense category (Bizum repayment, return, refund)
-                # It nets directly against that category's expenses, NEVER inflated as income
                 category_spending[cat] = category_spending.get(cat, 0.0) - amt
                 if cat in fixed_categories:
                     fixed_expenses -= amt
@@ -68,12 +122,10 @@ def calculate_monthly_forecast(year: int = None, month: int = None):
             elif cat in ["Liquidación Tarjetas", "Deudas y créditos"]:
                 card_settlements_total += abs_amt
             elif cat == "Traspaso entre cuentas":
-                # Internal transfer between Diego's accounts or to Amex - NOT consumption expense
                 pass
             elif cat == "Inversiones y ahorros":
                 investments_savings_total += abs_amt
             else:
-                # Real personal consumption expense (no double-counting)
                 category_spending[cat] = category_spending.get(cat, 0.0) + abs_amt
                 if cat in fixed_categories:
                     fixed_expenses += abs_amt
@@ -90,42 +142,43 @@ def calculate_monthly_forecast(year: int = None, month: int = None):
     projected_variable = velocity * num_days
     projected_total_expenses = fixed_expenses + projected_variable
 
-    # Default assumed income if no salary recorded yet (e.g. 3,200€)
-    assumed_income = total_income if total_income > 0 else 3200.0
-    projected_net_savings = assumed_income - projected_total_expenses
+    # Base income: actual income if present, else user configured expected_income (or 0)
+    assumed_income = total_income if total_income > 0 else expected_income
+    projected_net_savings = assumed_income - projected_total_expenses if assumed_income > 0 else 0.0
     projected_savings_rate = (projected_net_savings / assumed_income * 100) if assumed_income > 0 else 0.0
 
-    # Daily safe to spend
-    target_budget = assumed_income * 0.70 # 70% budget target
-    remaining_budget = max(0.0, target_budget - personal_expenses)
-    daily_safe_spend = remaining_budget / days_remaining
+    # Daily safe to spend based on budget_max if set, else 70% of assumed income
+    effective_budget = budget_max if budget_max > 0 else (assumed_income * 0.70 if assumed_income > 0 else 0.0)
+    remaining_budget = max(0.0, effective_budget - personal_expenses)
+    daily_safe_spend = (remaining_budget / days_remaining) if days_remaining > 0 else 0.0
 
     # Generate Recommendations
     recommendations = []
 
-    # 1. Company Reimbursements Insight
-    if company_reimbursable_expenses > 0:
+    # 1. Company Reimbursements Insight (Only if enabled)
+    if enable_comp and company_reimbursable_expenses > 0:
         recommendations.append({
             "type": "company_expense",
             "icon": "💼",
             "title": "Gastos de Empresa Adelantados",
-            "description": f"Has pagado {company_reimbursable_expenses:.2f}€ con tu tarjeta personal (gasolina, dietas, etc.). Han sido excluidos de tus gastos personales para no distorsionar tu presupuesto. Recuerda pasar la nota de gastos a tu empresa.",
+            "description": f"Has pagado {company_reimbursable_expenses:.2f}€ con tu tarjeta personal. Han sido excluidos de tus gastos personales para no distorsionar tu presupuesto.",
             "impact": f"+{company_reimbursable_expenses:.2f}€ a recuperar",
             "severity": "info"
         })
 
     # 2. Spending Velocity Insight
-    if days_elapsed > 5 and days_elapsed < num_days:
-        if projected_total_expenses > assumed_income * 0.85:
+    if days_elapsed > 5 and assumed_income > 0:
+        threshold = budget_max if budget_max > 0 else (assumed_income * 0.85)
+        if projected_total_expenses > threshold:
             recommendations.append({
                 "type": "burn_rate",
                 "icon": "⚠️",
                 "title": "Ritmo de Gasto Elevado",
-                "description": f"A este ritmo ({velocity:.1f}€/día en gastos variables), proyectas gastar {projected_total_expenses:.2f}€ a final de mes. Te recomendamos limitar el gasto discrecional a {daily_safe_spend:.1f}€/día durante los {days_remaining} días restantes.",
+                "description": f"A este ritmo ({velocity:.1f}€/día en gastos variables), proyectas gastar {projected_total_expenses:.2f}€ a final de mes. Te recomendamos limitar el gasto discrecional a {daily_safe_spend:.1f}€/día.",
                 "impact": f"Objetivo: <{daily_safe_spend:.1f}€/día",
                 "severity": "warning"
             })
-        else:
+        elif projected_net_savings > 0:
             recommendations.append({
                 "type": "burn_rate",
                 "icon": "✅",
@@ -135,15 +188,16 @@ def calculate_monthly_forecast(year: int = None, month: int = None):
                 "severity": "success"
             })
 
-    # 3. Investment Opportunity (MSCI World IE00BYX5P602)
-    potential_msci_contribution = max(100.0, round(projected_net_savings * 0.40 / 50) * 50)
-    if projected_net_savings > 200:
+    # 3. Investment Opportunity: ONLY if user has a registered fund in fund_info!
+    if first_fund and projected_net_savings > 150:
+        fund_name = first_fund["name"] or first_fund["isin"]
+        potential_contrib = max(50.0, round(projected_net_savings * 0.40 / 50) * 50)
         recommendations.append({
             "type": "investment",
             "icon": "📈",
-            "title": "Aportación Sugerida al Fondo MSCI World",
-            "description": f"Tu capacidad de ahorro proyectada te permite realizar una aportación periódica recomendada de {potential_msci_contribution:.0f}€ a tu fondo Fidelity MSCI World (IE00BYX5P602), manteniendo liquidez suficiente para imprevistos.",
-            "impact": f"Aportación sugerida: {potential_msci_contribution:.0f}€",
+            "title": f"Aportación Sugerida a {fund_name}",
+            "description": f"Tu capacidad de ahorro proyectada te permite realizar una aportación periódica recomendada de {potential_contrib:.0f}€ a tu fondo {fund_name}, manteniendo liquidez suficiente para imprevistos.",
+            "impact": f"Aportación sugerida: {potential_contrib:.0f}€",
             "severity": "primary"
         })
 
