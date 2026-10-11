@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -7,24 +7,24 @@ import {
   Edit3, 
   Briefcase, 
   Check, 
-  AlertCircle,
-  ArrowUpDown,
-  CreditCard,
-  Building,
-  Plane,
-  Sparkles,
-  CheckSquare,
-  Square,
-  X,
-  ArrowRight,
-  Scissors,
-  ArrowLeftRight,
-  Link2,
-  Unlink,
-  ChevronDown,
-  ChevronUp,
-  Layers,
-  Landmark
+  AlertCircle, 
+  ArrowUpDown, 
+  CreditCard, 
+  Building, 
+  Plane, 
+  Sparkles, 
+  CheckSquare, 
+  Square, 
+  X, 
+  ArrowRight, 
+  Scissors, 
+  ArrowLeftRight, 
+  Link2, 
+  Unlink, 
+  ChevronDown, 
+  ChevronUp, 
+  Layers, 
+  Landmark 
 } from 'lucide-react';
 import SplitTransactionModal from './SplitTransactionModal';
 import TransferPairModal from './TransferPairModal';
@@ -72,17 +72,17 @@ const ACCOUNT_STYLES = {
 };
 
 export default function TransactionsView({
-  transactions,
-  categories,
-  onUpdateTransaction,
-  onDeleteTransaction,
-  onBatchUpdateSuccess,
-  onOpenNewModal,
-  selectedMonth,
-  setSelectedMonth,
-  availableMonths,
-  darkMode,
-  onTriggerUndo,
+  transactions = [],
+  categories = [],
+  onUpdateTransaction = () => {},
+  onDeleteTransaction = () => {},
+  onBatchUpdateSuccess = () => {},
+  onOpenNewModal = () => {},
+  selectedMonth = 'all',
+  setSelectedMonth = () => {},
+  availableMonths = [],
+  darkMode = false,
+  onTriggerUndo = () => {},
   enableCompanyExpenses = true
 }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -140,7 +140,7 @@ export default function TransactionsView({
     fetch('/api/settings/banks')
       .then(res => res.json())
       .then(data => {
-        if (data?.banks) setBanksList(data.banks);
+        if (data?.banks && Array.isArray(data.banks)) setBanksList(data.banks);
       })
       .catch(err => console.error('Error fetching banks in transactions view:', err));
   }, []);
@@ -264,18 +264,26 @@ export default function TransactionsView({
     }
   };
 
+  // Safe array wrappers
+  const txList = Array.isArray(transactions) ? transactions : [];
+  const banks = Array.isArray(banksList) ? banksList : [];
+  const safeCategories = Array.isArray(categories) ? categories : [];
+  const safeMonths = Array.isArray(availableMonths) ? availableMonths : [];
+
   // Extract bank alias options and distinct accounts present in transactions
-  const presentAccounts = Array.from(new Set(transactions.map(t => t.account_alias || t.account).filter(Boolean)));
+  const presentAccounts = Array.from(new Set(txList.map(t => t?.account_alias || t?.account).filter(Boolean)));
   
   // Build account tab options using bank aliases if available
-  const bankOptions = banksList
-    .filter(b => Boolean(b.enabled))
-    .map(b => b.alias || b.name);
+  const bankOptions = banks
+    .filter(b => Boolean(b && b.enabled))
+    .map(b => b.alias || b.name)
+    .filter(Boolean);
 
   const allAccountTabs = ['all', ...Array.from(new Set([...bankOptions, ...presentAccounts]))];
 
   // Filter transactions with alias and account matching
-  const filtered = transactions.filter((t) => {
+  const filtered = txList.filter((t) => {
+    if (!t) return false;
     if (selectedAccount !== 'all') {
       const sel = selectedAccount.toLowerCase();
       const tAcc = (t.account || '').toLowerCase();
@@ -283,18 +291,18 @@ export default function TransactionsView({
 
       const directMatch = tAcc === sel || tAlias === sel || t.account === selectedAccount || t.account_alias === selectedAccount;
 
-      const matchedBank = banksList.find(b => 
+      const matchedBank = banks.find(b => 
         (b.alias && b.alias.toLowerCase() === sel) ||
-        b.name.toLowerCase() === sel ||
-        b.id.toLowerCase() === sel
+        (b.name && b.name.toLowerCase() === sel) ||
+        (b.id && b.id.toLowerCase() === sel)
       );
 
       let bankMatch = false;
       if (matchedBank) {
-        const bId = matchedBank.id.toLowerCase();
-        const bName = matchedBank.name.toLowerCase();
+        const bId = (matchedBank.id || '').toLowerCase();
+        const bName = (matchedBank.name || '').toLowerCase();
         const bAlias = (matchedBank.alias || '').toLowerCase();
-        bankMatch = tAcc.includes(bId) || tAcc.includes(bName) || (bAlias && (tAlias === bAlias || tAcc.includes(bAlias)));
+        bankMatch = (bId && tAcc.includes(bId)) || (bName && tAcc.includes(bName)) || (bAlias && (tAlias === bAlias || tAcc.includes(bAlias)));
       }
 
       if (!directMatch && !bankMatch) {
@@ -354,15 +362,15 @@ export default function TransactionsView({
     }
   };
 
-  const selectedTxs = transactions.filter(t => selectedTxIds.includes(t.id));
-  const selectedSum = selectedTxs.reduce((acc, t) => acc + t.amount, 0);
+  const selectedTxs = txList.filter(t => selectedTxIds.includes(t.id));
+  const selectedSum = selectedTxs.reduce((acc, t) => acc + (parseFloat(t.amount) || 0), 0);
 
   // Batch actions on multiple selections
   const handleApplyBatchCategory = async () => {
     if (!batchCategory || selectedTxIds.length === 0) return;
     if (batchCategory === 'Deudas y créditos') {
-      const selectedTxs = transactions.filter(t => selectedTxIds.includes(t.id));
-      handleOpenLoanModal(selectedTxs);
+      const selTxs = txList.filter(t => selectedTxIds.includes(t.id));
+      handleOpenLoanModal(selTxs);
       return;
     }
     const count = selectedTxIds.length;
@@ -592,7 +600,7 @@ export default function TransactionsView({
             className="text-xs font-semibold bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] rounded-md px-3 py-1.5 shadow-xs outline-none text-[#37352f] dark:text-[#e0e0e0] cursor-pointer"
           >
             <option value="all">Todos los meses</option>
-            {availableMonths.map((m) => (
+            {safeMonths.map((m) => (
               <option key={m} value={m}>{m}</option>
             ))}
           </select>
@@ -709,7 +717,7 @@ export default function TransactionsView({
                 className="bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200 dark:border-neutral-700 rounded-md px-2 py-1 text-xs outline-none text-neutral-700 dark:text-neutral-300"
               >
                 <option value="all">Todas</option>
-                {categories.map((c) => (
+                {safeCategories.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -858,7 +866,7 @@ export default function TransactionsView({
                               onChange={(e) => changeCategory(tx, e.target.value)}
                               className="text-xs p-1 bg-white dark:bg-[#333] border border-neutral-300 dark:border-neutral-600 rounded outline-none"
                             >
-                              {categories.map((c) => (
+                              {safeCategories.map((c) => (
                                 <option key={c} value={c}>{c}</option>
                               ))}
                             </select>
@@ -989,7 +997,7 @@ export default function TransactionsView({
                           ? 'text-neutral-800 dark:text-neutral-200' 
                           : 'text-emerald-600 dark:text-emerald-400'
                       }`}>
-                        {tx.amount > 0 ? `+${tx.amount.toFixed(2)}` : tx.amount.toFixed(2)} €
+                        {Number(tx.amount) > 0 ? `+${Number(tx.amount).toFixed(2)}` : Number(tx.amount || 0).toFixed(2)} €
                       </td>
 
                       {/* Acciones */}
@@ -1046,7 +1054,7 @@ export default function TransactionsView({
               className="bg-neutral-800 dark:bg-neutral-900 border border-neutral-700 text-xs rounded-lg px-2.5 py-1.5 text-white outline-none cursor-pointer focus:border-indigo-400"
             >
               <option value="">Cambiar categoría a...</option>
-              {categories.map((c) => (
+              {safeCategories.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -1105,8 +1113,8 @@ export default function TransactionsView({
             <button
               type="button"
               onClick={() => {
-                const selectedTxs = transactions.filter(t => selectedTxIds.includes(t.id));
-                handleOpenLoanModal(selectedTxs);
+                const selTxs = txList.filter(t => selectedTxIds.includes(t.id));
+                handleOpenLoanModal(selTxs);
               }}
               disabled={batchOperating}
               className="px-2.5 py-1.5 rounded-lg bg-purple-950/70 hover:bg-purple-900/80 text-purple-200 border border-purple-700/60 text-xs font-medium flex items-center space-x-1 cursor-pointer transition-colors disabled:opacity-50"
@@ -1229,7 +1237,7 @@ export default function TransactionsView({
                         </div>
                       </div>
                       <span className="font-mono text-[11px] font-semibold flex-shrink-0 ml-2">
-                        {m.amount > 0 ? `+${m.amount.toFixed(2)}` : m.amount.toFixed(2)} €
+                        {Number(m.amount) > 0 ? `+${Number(m.amount).toFixed(2)}` : Number(m.amount || 0).toFixed(2)} €
                       </span>
                     </div>
                   );
