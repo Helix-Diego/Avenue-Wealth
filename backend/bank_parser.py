@@ -5,13 +5,15 @@ from datetime import datetime, timedelta
 from html.parser import HTMLParser
 
 # Known Accounts
-ACCOUNT_SANTANDER_MAIN = "Santander (*3012)"
-ACCOUNT_SANTANDER_SAVINGS = "Santander Ahorro (*1842)"
-ACCOUNT_SANTANDER_CARD = "Santander Tarjeta (*0871)"
-ACCOUNT_IBERIA_CARDS = "Iberia Cards (*2366)"
-ACCOUNT_N26 = "N26 (*7089)"
-ACCOUNT_AMEX = "American Express Platinum"
+ACCOUNT_SANTANDER_MAIN = "Banco Santander"
+ACCOUNT_SANTANDER_SAVINGS = "Santander Ahorro"
+ACCOUNT_SANTANDER_CARD = "Tarjeta Santander"
+ACCOUNT_IBERIA_CARDS = "Iberia Cards"
+ACCOUNT_N26 = "N26"
+ACCOUNT_AMEX = "American Express"
 ACCOUNT_MYINVESTOR = "MyInvestor"
+ACCOUNT_GENERIC = "Cuenta Bancaria"
+
 
 SPANISH_MONTH_MAP = {
     'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04',
@@ -149,25 +151,40 @@ def parse_date(val):
 
     return None
 
-def detect_account_from_content(full_text: str = "", default_account: str = "Santander (*3012)", filename: str = "") -> str:
+def get_enabled_bank_ids() -> set:
+    try:
+        from database import get_supported_banks
+        banks = get_supported_banks()
+        return {b["id"] for b in banks if b.get("enabled")}
+    except Exception:
+        return {"santander", "amex", "iberia_cards", "n26", "myinvestor", "generic"}
+
+def detect_account_from_content(full_text: str = "", default_account: str = "Banco Santander", filename: str = "") -> str:
     """
-    Returns the account selected by the user, or auto-detects if 'Auto' or not explicitly specified.
+    Returns the account selected by the user, or auto-detects if 'Auto' or not explicitly specified,
+    respecting whether each bank parser is enabled in Settings.
     """
     if default_account and default_account != "Auto":
         return default_account
 
+    enabled_banks = get_enabled_bank_ids()
     sample = (filename + " " + full_text[:4000]).lower()
-    if any(k in sample for k in ["myinvestor", "my investor", "fidelity msci world", "transferencia desde myinvestor"]):
-        return ACCOUNT_MYINVESTOR
-    if "n26" in sample:
-        return ACCOUNT_N26
-    if "iberia cards" in sample or "iberiacards" in sample:
-        return ACCOUNT_IBERIA_CARDS
-    if "american express" in sample or "amex" in sample:
-        return ACCOUNT_AMEX
-    return ACCOUNT_SANTANDER_MAIN
 
-def parse_csv_content(content_str: str, default_account: str = "Santander (*3012)", filename: str = ""):
+    if "myinvestor" in enabled_banks and any(k in sample for k in ["myinvestor", "my investor", "fidelity msci world", "transferencia desde myinvestor"]):
+        return ACCOUNT_MYINVESTOR
+    if "n26" in enabled_banks and "n26" in sample:
+        return ACCOUNT_N26
+    if "iberia_cards" in enabled_banks and ("iberia cards" in sample or "iberiacards" in sample):
+        return ACCOUNT_IBERIA_CARDS
+    if "amex" in enabled_banks and ("american express" in sample or "amex" in sample):
+        return ACCOUNT_AMEX
+    if "santander" in enabled_banks and "santander" in sample:
+        return ACCOUNT_SANTANDER_MAIN
+
+    return default_account if default_account and default_account != "Auto" else ACCOUNT_GENERIC
+
+def parse_csv_content(content_str: str, default_account: str = "Banco Santander", filename: str = ""):
+
     """
     Parses CSV content from Santander, Iberia Cards, N26, Amex, or generic extracts.
     Robust against Windows/Mac line endings (\r\n, \r), unquoted fields, and diverse delimiters.
@@ -545,7 +562,7 @@ def extract_rows_from_bytes(file_bytes: bytes, filename: str = "") -> list:
 
     return rows
 
-def parse_excel_content(file_bytes: bytes, default_account: str = "Santander (*3012)", filename: str = ""):
+def parse_excel_content(file_bytes: bytes, default_account: str = "Banco Santander", filename: str = ""):
     rows = extract_rows_from_bytes(file_bytes, filename=filename)
     if not rows:
         return []

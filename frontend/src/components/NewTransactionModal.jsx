@@ -8,13 +8,36 @@ export default function NewTransactionModal({
   categories 
 }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [account, setAccount] = useState('Santander (*3012)');
+  const [account, setAccount] = useState('Banco Santander');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [isReimbursable, setIsReimbursable] = useState(false);
   const [notes, setNotes] = useState('');
   const [isIncome, setIsIncome] = useState(false);
+  const [accountOptions, setAccountOptions] = useState([
+    "Banco Santander",
+    "American Express",
+    "Iberia Cards",
+    "N26",
+    "MyInvestor",
+    "Cuenta Bancaria"
+  ]);
+
+  React.useEffect(() => {
+    fetch('/api/settings/banks')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.banks) {
+          const enabledNames = data.banks.filter(b => b.enabled).map(b => b.name);
+          if (enabledNames.length > 0) {
+            setAccountOptions(enabledNames);
+            setAccount(enabledNames[0]);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   if (!isOpen) return null;
 
@@ -37,16 +60,6 @@ export default function NewTransactionModal({
 
     onClose();
   };
-
-  const accountOptions = [
-    "Santander (*3012)",
-    "Santander Ahorro (*1842)",
-    "Santander Tarjeta (*0871)",
-    "Iberia Cards (*2366)",
-    "N26 (*7089)",
-    "American Express Platinum",
-    "MyInvestor"
-  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">

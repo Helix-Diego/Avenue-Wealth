@@ -18,9 +18,46 @@ def _load_env():
                 pass
 
 _load_env()
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+
+def get_deepseek_config() -> Dict[str, Any]:
+    from backend.database import get_connection
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    model = "deepseek-chat"
+    ai_enabled = True
+    user_name = "Usuario"
+    company_name = ""
+    company_enabled = True
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM user_settings WHERE key IN ('deepseek_api_key', 'deepseek_model', 'ai_enabled', 'user_name', 'company_name', 'enable_company_expenses')")
+        rows = dict(cursor.fetchall())
+        conn.close()
+        if rows.get("deepseek_api_key"):
+            api_key = rows["deepseek_api_key"]
+        if rows.get("deepseek_model"):
+            model = rows["deepseek_model"]
+        if "ai_enabled" in rows:
+            ai_enabled = (rows["ai_enabled"] == "1")
+        if rows.get("user_name"):
+            user_name = rows["user_name"]
+        if rows.get("company_name"):
+            company_name = rows["company_name"]
+        if "enable_company_expenses" in rows:
+            company_enabled = (rows["enable_company_expenses"] == "1")
+    except Exception as e:
+        print("Notice loading deepseek config:", e)
+
+    return {
+        "api_key": api_key,
+        "model": model,
+        "ai_enabled": ai_enabled,
+        "user_name": user_name,
+        "company_name": company_name,
+        "company_enabled": company_enabled
+    }
+
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-MODEL_NAME = "deepseek-chat"
 
 def get_ssl_context():
     ctx = ssl.create_default_context()
@@ -28,9 +65,85 @@ def get_ssl_context():
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
-def call_deepseek(messages: List[Dict[str, str]], temperature: float = 0.3, max_tokens: int = 4096) -> str:
+def test_deepseek_connection(api_key: str = None, model: str = None) -> Dict[str, Any]:
+    """
+    Tests connection to DeepSeek API with a minimal ping.
+    Returns latency and success status.
+    """
+    import time
+    cfg = get_deepseek_config()
+    key_to_use = api_key if (api_key is not None and api_key.strip()) else cfg["api_key"]
+    model_to_use = model if (model is not None and model.strip()) else cfg["model"]
+
+    if not key_to_use or not key_to_use.strip():
+        return {
+            "success": False,
+            "message": "No se ha configurado ninguna clave API de DeepSeek.",
+            "latency_ms": None
+        }
+
     payload = {
-        "model": MODEL_NAME,
+        "model": model_to_use,
+        "messages": [
+            {"role": "user", "content": "Hola"}
+        ],
+        "max_tokens": 10
+    }
+
+    req = urllib.request.Request(
+        DEEPSEEK_API_URL,
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key_to_use.strip()}"
+        }
+    )
+
+    start_time = time.time()
+    try:
+        with urllib.request.urlopen(req, context=get_ssl_context(), timeout=12) as res:
+            data = json.loads(res.read().decode('utf-8'))
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            if "choices" in data and len(data["choices"]) > 0:
+                return {
+                    "success": True,
+                    "message": f"Conexión exitosa con DeepSeek ({elapsed_ms} ms). Modelo: {model_to_use}",
+                    "latency_ms": elapsed_ms,
+                    "model": model_to_use
+                }
+            return {
+                "success": False,
+                "message": "Respuesta inesperada de la API de DeepSeek.",
+                "latency_ms": elapsed_ms
+            }
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = json.loads(e.read().decode('utf-8'))
+            err_msg = err_body.get("error", {}).get("message", str(e))
+        except Exception:
+            err_msg = str(e)
+        return {
+            "success": False,
+            "message": f"Error HTTP {e.code}: {err_msg}",
+            "latency_ms": None
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error de conexión: {str(e)}",
+            "latency_ms": None
+        }
+
+def call_deepseek(messages: List[Dict[str, str]], temperature: float = 0.3, max_tokens: int = 4096) -> str:
+    cfg = get_deepseek_config()
+    api_key = cfg["api_key"]
+    model_name = cfg["model"]
+
+    if not api_key:
+        raise ValueError("Clave API de DeepSeek no configurada. Ve a Ajustes para configurarla.")
+
+    payload = {
+        "model": model_name,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens
@@ -41,7 +154,7 @@ def call_deepseek(messages: List[Dict[str, str]], temperature: float = 0.3, max_
         data=json.dumps(payload).encode('utf-8'),
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}"
+            "Authorization": f"Bearer {api_key}"
         }
     )
 
@@ -56,29 +169,41 @@ def categorize_with_ai(
     few_shots: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """
-    Uses DeepSeek to classify ambiguous or unseen transactions based on Diego's categories and few-shots.
+    Uses DeepSeek to classify ambiguous or unseen transactions based on categories and few-shots.
     """
+    cfg = get_deepseek_config()
+    if not cfg["ai_enabled"] or not cfg["api_key"]:
+        return {
+            "category": "Otras compras",
+            "is_reimbursable": 0,
+            "needs_clarification": True,
+            "clarification_question": f"¿Cómo deseas categorizar '{description}' ({amount:.2f}€)?",
+            "confidence": 0.5,
+            "explanation": "Modelo IA no configurado o inactivo"
+        }
+
     few_shots_text = "\n".join([
         f"- '{fs['concept']}' ({fs['amount']}€) -> Categoría: {fs['category']}"
-        for fs in few_shots[:25]
+        for fs in few_shots[:20]
     ])
 
-    prompt = f"""Eres el agente financiero personal de Diego Hernández.
-Tu tarea es clasificar la siguiente transacción bancaria en la categoría más precisa y determinar si puede ser un gasto de empresa reembolsable por BMC Software (empresa de Diego).
+    user_name = cfg["user_name"]
+    company_rule = ""
+    if cfg["company_enabled"] and cfg["company_name"]:
+        company_rule = f"Si el concepto parece ser un desplazamiento, gasolina o comida por trabajo para {cfg['company_name']}, o si contiene '{cfg['company_name']}', marca 'is_reimbursable': 1 o pide aclaración."
 
-REGLAS DE DIEGO:
-1. Diego trabaja en BMC Software y a veces adelanta con su tarjeta personal gasolina (Repsol, Cepsa, etc.), peajes o comidas de trabajo que luego su empresa le reembolsa. Si el concepto es de gasolina o viaje laboral y no se especifica si es personal o trabajo, debes indicar 'needs_clarification': true.
-2. Si es nómina de BMC Software, la categoría es 'Sueldo'.
-3. Préstamos familiares y compras compartidas con familiares (Javier Hernandez Porras, Elisa Tcach, Alejandra Hernandez Tcach, cuotas Endesa) se categorizan como 'Prestamos familiares'.
-4. Go Fit, Padel, Playtomic es 'Deporte/Gimnasio'.
-5. Alquiler de Agustín De La Fuente Martínez es 'Vivienda'.
-6. Gastos comunes con Diego Hernández Tcach o ajustes de luz/gas es 'Gastos Vivienda'.
-7. Inversión mensual o Fidelity MSCI World es 'Inversiones y ahorros'.
+    prompt = f"""Eres el agente financiero personal de {user_name}.
+Tu tarea es clasificar la siguiente transacción bancaria en la categoría más adecuada de la lista proporcionada.
+
+DIRECTRICES:
+1. Analiza el comercio o concepto bancario.
+2. {company_rule}
+3. Si el concepto es ambiguo o no estás seguro al 100%, indica 'needs_clarification': true y formula una pregunta clara para el usuario en 'clarification_question'.
 
 CATEGORÍAS DISPONIBLES:
 {json.dumps(categories, ensure_ascii=False)}
 
-EJEMPLOS DE REFERENCIA DE LA KNOWLEDGE BASE DE DIEGO:
+EJEMPLOS DE REFERENCIA:
 {few_shots_text}
 
 TRANSACCIÓN A CLASIFICAR:
@@ -90,7 +215,7 @@ Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
   "category": "nombre exacto de una de las categorías disponibles",
   "is_reimbursable": 0 o 1,
   "needs_clarification": true o false,
-  "clarification_question": "pregunta para Diego si hay duda, o null si está seguro",
+  "clarification_question": "pregunta para el usuario si hay duda, o null si está seguro",
   "confidence": número entre 0.0 y 1.0,
   "explanation": "breve motivo"
 }}"""
@@ -104,7 +229,6 @@ Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
             temperature=0.1,
             max_tokens=250
         )
-        # Clean response
         clean_json = raw_resp.strip()
         if clean_json.startswith("```json"):
             clean_json = clean_json[7:]
@@ -116,14 +240,14 @@ Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
         parsed = json.loads(clean_json.strip())
         return parsed
     except Exception as e:
-        print(f"DeepSeek categorization fallback: {e}")
+        print(f"DeepSeek categorization note: {e}")
         return {
             "category": "Otras compras",
             "is_reimbursable": 0,
             "needs_clarification": True,
-            "clarification_question": f"No se pudo categorizar con certeza: {description}",
+            "clarification_question": f"¿Cómo deseas categorizar '{description}' ({amount:.2f}€)?",
             "confidence": 0.5,
-            "explanation": "Fallback por timeout o error de análisis"
+            "explanation": "Fallback por conexión o modelo IA"
         }
 
 def chat_financial_assistant(
@@ -132,47 +256,33 @@ def chat_financial_assistant(
     selected_month: Optional[str] = None
 ) -> str:
     """
-    Interactive financial intelligence chat with DeepSeek V3 (Light).
-    Has full access to Diego's multi-month transactions, bank accounts, portfolio,
-    subscriptions, top merchants, and reimbursable company expenses.
+    Interactive financial intelligence chat with DeepSeek.
     """
-    system_prompt = f"""Eres el Asistente de Inteligencia Financiera Personal de Diego Hernández.
-Esta aplicación es para la gestión patrimonial y financiera estrictamente PERSONAL de Diego.
+    cfg = get_deepseek_config()
+    user_name = cfg["user_name"]
 
-Tienes acceso completo a la base de datos de movimientos bancarios (550 transacciones reales), cuentas (Santander *3012, Santander Ahorro *1842, Iberia Cards *2366, N26 *7089, Amex Platinum), cartera de inversión en Fidelity MSCI World y acciones en Google Sheets cotizadas en tiempo real con Finnhub.
+    system_prompt = f"""Eres el Asistente de Inteligencia Financiera Personal de {user_name}.
+Tu objetivo es analizar sus finanzas personales, ofrecer recomendaciones proactivas, resolver dudas y ayudar a optimizar el ahorro y la inversión.
 
 =======================================================
-PANORAMA FINANCIERO Y DATOS DE LA BASE DE DATOS DE DIEGO:
+PANORAMA FINANCIERO Y DATOS DE LA BASE DE DATOS:
 =======================================================
 {context_text}
 =======================================================
 
-REGLAS FUNDAMENTALES Y DIRECTRICES DE ANÁLISIS:
-1. GASTOS REEMBOLSABLES DE BMC SOFTWARE:
-   - Diego a veces paga gastos de trabajo (gasolina Repsol/Cepsa, dietas, viajes laborales) con sus tarjetas personales.
-   - Estos gastos son REEMBOLSABLES y NUNCA deben computar como gasto personal ni inflar su gasto mensual. Son un crédito a favor de Diego pendiente de liquidar por parte de BMC Software.
-
-2. GASTOS FIJOS Y SUSCRIPCIONES:
-   - Identifica con precisión sus compromisos fijos: Alquiler de Agustín De La Fuente (~654 €/mes), Go Fit Gimnasio (~69,95 €/mes), Pádel Fuencarral (~42,72 €/mes), Apple (~7,24 €/mes), Legalitas, etc.
-
-3. FONDO INDEXADO MSCI WORLD (IE00BYX5P602):
-   - Fidelity MSCI World Index Fund P-ACC-EUR.
-   - Tiene 1.436,51 participaciones valoradas en >17.300 € (+20,8% de revalorización histórica).
-   - Cuando se hable de ahorro o inversión periódica, simula aportaciones a este fondo indexado.
-
-4. ESTILO Y FORMATO DE RESPUESTA:
-   - Responde SIEMPRE en español de España con un tono cercano, analítico, riguroso y profesional (estilo Copilot Money, Notion y banca privada).
-   - Usa siempre FORMATO MARKDOWN ENRIQUECIDO:
-     * Tablas markdown para comparar meses, desglosar gastos por categoría o comercio, y simular escenarios.
-     * Cifras en negrita con dos decimales y el símbolo € (ej. **1.233,19 €**).
-     * Destaca recomendaciones y alertas clave con bloques de cita o badges:
-       > 💡 **Recomendación Proactiva**: ...
-       > 💼 **Gastos Reembolsables BMC**: ...
-       > ⚠️ **Atención / Money Leak**: ...
-   - Si Diego te pide simulaciones de inversión (ej. "qué pasa si aporto 300€ al mes al MSCI World"), calcula proyecciones matemáticas compuestas a 5, 10 y 15 años considerando rentabilidades medias históricas del 7% y 8% anual.
-   - Sé proactivo: además de responder a la pregunta concreta, detecta patrones interesantes, posibles fugas de dinero (gastos que han subido sin motivo) y oportunidades de optimización.
+DIRECTRICES DE ANÁLISIS:
+1. Responde SIEMPRE en español con un tono cercano, analítico, riguroso y profesional (estilo Copilot Money, Notion y banca privada).
+2. Usa FORMATO MARKDOWN ENRIQUECIDO:
+   * Tablas markdown para comparar meses o desglosar gastos por categoría y comercio.
+   * Cifras en negrita con dos decimales y el símbolo € (ej. **1.233,19 €**).
+   * Destaca recomendaciones y alertas clave con bloques de cita o badges:
+     > 💡 **Recomendación Proactiva**: ...
+     > ⚠️ **Atención**: ...
+3. Si el usuario te pide simulaciones de inversión o ahorro, calcula proyecciones matemáticas realistas a 5, 10 y 15 años.
+4. Sé proactivo: además de responder a la pregunta concreta, detecta patrones interesantes y oportunidades de optimización.
 """
 
     api_messages = [{"role": "system", "content": system_prompt}] + messages
     return call_deepseek(api_messages, temperature=0.25, max_tokens=4096)
+
 

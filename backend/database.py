@@ -137,7 +137,31 @@ def init_db():
     )
     """)
 
-    # 6. Bank Accounts & Balance Tracking (up to latest import date)
+    # 6. Supported Banks Configuration
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS supported_banks (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        description TEXT,
+        file_formats TEXT,
+        badge_color TEXT DEFAULT 'indigo'
+    )
+    """)
+
+    # 7. Categories Table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT DEFAULT '#64748B',
+        icon TEXT DEFAULT 'Tag',
+        is_system INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    # 8. Bank Accounts & Balance Tracking (up to latest import date)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS bank_accounts (
         account_name TEXT PRIMARY KEY,
@@ -208,24 +232,68 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
-    # Seed known accounts if not exists
-    default_accounts = [
-        ("Santander (*3012)", "checking", 0.0, "EUR", None, None, 0, "Cuenta corriente principal"),
-        ("Santander Ahorro (*1842)", "savings", 0.0, "EUR", None, None, 0, "Cuenta online ahorro / retención"),
-        ("N26 (*7089)", "checking", 0.0, "EUR", None, None, 0, "Cuenta para viajes"),
-        ("Iberia Cards (*2366)", "credit_card", 0.0, "EUR", None, None, 1, "Tarjeta crédito Iberia Icon (cierre día 15)"),
-        ("American Express Platinum", "credit_card", 0.0, "EUR", None, None, 1, "Tarjeta Amex Platinum"),
-        ("Santander Tarjeta (*0871)", "credit_card", 0.0, "EUR", None, None, 1, "Tarjeta débito/crédito Santander"),
-        ("MyInvestor", "investment", 0.0, "EUR", None, None, 0, "Cuenta corriente y de inversión MyInvestor"),
+    # Seed default categories if empty
+    cursor.execute("SELECT COUNT(*) FROM categories")
+    if cursor.fetchone()[0] == 0:
+        default_categories = [
+            ("Alimentación & Supermercado", "#10B981", "ShoppingCart", 1),
+            ("Restaurantes & Ocio", "#F59E0B", "Utensils", 1),
+            ("Transporte & Gasolina", "#3B82F6", "Fuel", 1),
+            ("Vivienda & Suministros", "#6366F1", "Home", 1),
+            ("Suscripciones & Servicios", "#8B5CF6", "Tv", 1),
+            ("Compras & Ropa", "#EC4899", "ShoppingBag", 1),
+            ("Salud & Bienestar", "#14B8A6", "HeartPulse", 1),
+            ("Viajes & Alojamiento", "#06B6D4", "Plane", 1),
+            ("Deporte & Gimnasio", "#F97316", "Dumbbell", 1),
+            ("Educación", "#84CC16", "GraduationCap", 1),
+            ("Deudas y créditos", "#EF4444", "CreditCard", 1),
+            ("Sueldo / Ingresos", "#22C55E", "Banknote", 1),
+            ("Inversiones y ahorros", "#0EA5E9", "TrendingUp", 1),
+            ("Traspaso entre cuentas", "#94A3B8", "ArrowLeftRight", 1),
+            ("Gastos de Empresa", "#38BDF8", "Briefcase", 1),
+            ("Liquidación Tarjetas", "#A855F7", "Receipt", 1),
+            ("Otras compras", "#64748B", "Package", 1),
+        ]
+        cursor.executemany("""
+        INSERT OR IGNORE INTO categories (name, color, icon, is_system)
+        VALUES (?, ?, ?, ?)
+        """, default_categories)
+
+    # Seed default supported banks if empty
+    cursor.execute("SELECT COUNT(*) FROM supported_banks")
+    if cursor.fetchone()[0] == 0:
+        default_banks = [
+            ("santander", "Banco Santander", 1, "Cuentas corrientes y tarjetas de crédito/débito", "CSV, Excel (.xlsx, .xls)", "red"),
+            ("amex", "American Express", 1, "Tarjetas Amex (Platinum, Gold, etc.) con normalización de signos", "CSV", "blue"),
+            ("iberia_cards", "Iberia Cards", 1, "Tarjetas Iberia Icon Visa / Mastercard", "CSV", "amber"),
+            ("n26", "N26", 1, "Cuentas bancarias N26 (fechas seriales y multidivisa)", "CSV", "teal"),
+            ("myinvestor", "MyInvestor", 1, "Cuentas de inversión, fondos indexados y efectivo", "CSV", "purple"),
+            ("generic", "Formato Genérico", 1, "Cualquier extracto con columnas Fecha, Concepto e Importe", "CSV, Excel (.xlsx, .xls)", "gray"),
+        ]
+        cursor.executemany("""
+        INSERT OR IGNORE INTO supported_banks (id, name, enabled, description, file_formats, badge_color)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, default_banks)
+
+    # Default general user settings
+    default_settings = [
+        ("user_name", "Mi Espacio"),
+        ("enable_company_expenses", "1"),
+        ("company_name", ""),
+        ("currency", "EUR"),
+        ("deepseek_model", "deepseek-chat"),
+        ("ai_enabled", "1"),
+        ("starting_cash", "0.0"),
+        ("onboarding_completed", "0")
     ]
     cursor.executemany("""
-    INSERT OR IGNORE INTO bank_accounts (account_name, account_type, current_balance, currency, last_transaction_date, last_imported_at, is_credit_card, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, default_accounts)
+    INSERT OR IGNORE INTO user_settings (key, value) VALUES (?, ?)
+    """, default_settings)
 
-    # Clean out fake starting_cash and ensure Finnhub token
-    cursor.execute("INSERT OR REPLACE INTO user_settings (key, value) VALUES ('starting_cash', '0.0')")
-    cursor.execute("INSERT OR REPLACE INTO user_settings (key, value) VALUES ('finnhub_api_key', 'd9n40r9r01qlajg3bjugd9n40r9r01qlajg3bjv0')")
+    # If env var has DEEPSEEK_API_KEY, seed it into user_settings if not present
+    env_ds_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if env_ds_key:
+        cursor.execute("INSERT OR IGNORE INTO user_settings (key, value) VALUES ('deepseek_api_key', ?)", (env_ds_key,))
 
     # Populate default rules if empty
     cursor.execute("SELECT COUNT(*) FROM category_rules")
@@ -240,7 +308,7 @@ def init_db():
             ("SUPERCOR", "Alimentación & Supermercado", 0, 10),
             ("BONPREU", "Alimentación & Supermercado", 0, 10),
             ("CONDIS", "Alimentación & Supermercado", 0, 10),
-            ("REPSOL", "Transporte & Gasolina", 0, 5), # Often prompt if company
+            ("REPSOL", "Transporte & Gasolina", 0, 5),
             ("CEPSA", "Transporte & Gasolina", 0, 5),
             ("BP OLEO", "Transporte & Gasolina", 0, 5),
             ("SHELL", "Transporte & Gasolina", 0, 5),
@@ -284,13 +352,12 @@ def init_db():
             ("BOOKING", "Viajes & Alojamiento", 0, 10),
             ("AIRBNB", "Viajes & Alojamiento", 0, 10),
             ("HOTEL", "Viajes & Alojamiento", 0, 10),
-            ("NOMINA", "Ingresos / Nómina", 0, 10),
-            ("BMC SOFTWARE", "Ingresos / Nómina", 0, 10),
+            ("NOMINA", "Sueldo / Ingresos", 0, 10),
             ("REEMBOLSO GASTOS", "Gastos de Empresa", 0, 10),
-            ("MYINVESTOR", "Inversión & Ahorro", 0, 10),
-            ("TRADE REPUBLIC", "Inversión & Ahorro", 0, 10),
-            ("DEGIRO", "Inversión & Ahorro", 0, 10),
-            ("FIDELITY", "Inversión & Ahorro", 0, 10),
+            ("MYINVESTOR", "Inversiones y ahorros", 0, 10),
+            ("TRADE REPUBLIC", "Inversiones y ahorros", 0, 10),
+            ("DEGIRO", "Inversiones y ahorros", 0, 10),
+            ("FIDELITY", "Inversiones y ahorros", 0, 10),
         ]
         cursor.executemany(
             "INSERT OR IGNORE INTO category_rules (pattern, category, is_reimbursable, priority) VALUES (?, ?, ?, ?)",
@@ -305,6 +372,138 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+# --- Settings & Categories Helper Functions ---
+
+def get_setting(key: str, default: str = None) -> str:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM user_settings WHERE key = ?", (key,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else default
+
+def set_setting(key: str, value: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO user_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
+    conn.commit()
+    conn.close()
+
+def get_all_settings() -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM user_settings")
+    rows = cursor.fetchall()
+    conn.close()
+    return {r["key"]: r["value"] for r in rows}
+
+def get_categories_list() -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT c.*, COUNT(t.id) as tx_count
+    FROM categories c
+    LEFT JOIN transactions t ON t.category = c.name
+    GROUP BY c.id
+    ORDER BY c.name ASC
+    """)
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def add_category(name: str, color: str = "#64748B", icon: str = "Tag") -> dict:
+    clean_name = name.strip()
+    if not clean_name:
+        raise ValueError("El nombre de la categoría no puede estar vacío.")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO categories (name, color, icon, is_system)
+    VALUES (?, ?, ?, 0)
+    """, (clean_name, color, icon))
+    new_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": new_id, "name": clean_name, "color": color, "icon": icon, "is_system": 0}
+
+def update_category(old_name: str, new_name: str, color: str = None, icon: str = None) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    updates = []
+    params = []
+    if new_name and new_name.strip() != old_name:
+        updates.append("name = ?")
+        params.append(new_name.strip())
+    if color:
+        updates.append("color = ?")
+        params.append(color)
+    if icon:
+        updates.append("icon = ?")
+        params.append(icon)
+    if updates:
+        params.append(old_name)
+        cursor.execute(f"UPDATE categories SET {', '.join(updates)} WHERE name = ?", params)
+        if new_name and new_name.strip() != old_name:
+            cursor.execute("UPDATE transactions SET category = ? WHERE category = ?", (new_name.strip(), old_name))
+            cursor.execute("UPDATE category_rules SET category = ? WHERE category = ?", (new_name.strip(), old_name))
+    conn.commit()
+    conn.close()
+    return {"status": "updated", "old_name": old_name, "new_name": new_name or old_name}
+
+def delete_category(name: str, fallback_category: str = "Otras compras") -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    # Check if category exists
+    cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
+    cat = cursor.fetchone()
+    if not cat:
+        conn.close()
+        raise ValueError(f"La categoría '{name}' no existe.")
+
+    # Reassign existing transactions to fallback category
+    cursor.execute("UPDATE transactions SET category = ? WHERE category = ?", (fallback_category, name))
+    reassigned_count = cursor.rowcount
+    cursor.execute("DELETE FROM category_rules WHERE category = ?", (name,))
+    cursor.execute("DELETE FROM categories WHERE name = ?", (name,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted", "name": name, "reassigned_transactions": reassigned_count}
+
+def get_supported_banks() -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM supported_banks ORDER BY id ASC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def update_bank_enabled(bank_id: str, enabled: bool) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE supported_banks SET enabled = ? WHERE id = ?", (1 if enabled else 0, bank_id))
+    conn.commit()
+    conn.close()
+    return {"bank_id": bank_id, "enabled": enabled}
+
+def clean_all_transactions(keep_settings: bool = True):
+    """
+    Completely wipes all personal transactions, loans, credit cards,
+    and portfolio holdings, giving the user a fresh, clean slate.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM transactions")
+    cursor.execute("DELETE FROM loans")
+    cursor.execute("DELETE FROM fund_contributions")
+    cursor.execute("DELETE FROM portfolio_stocks")
+    cursor.execute("DELETE FROM bank_accounts")
+    cursor.execute("UPDATE fund_info SET total_shares = 0.0, last_updated = datetime('now') WHERE isin = 'IE00BYX5P602'")
+    if not keep_settings:
+        cursor.execute("DELETE FROM user_settings WHERE key NOT IN ('deepseek_api_key', 'finnhub_api_key')")
+    conn.commit()
+    conn.close()
+
 
 def sync_realtime_account_balances(conn=None) -> list:
     """

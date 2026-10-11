@@ -8,23 +8,29 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
-from backend.database import get_connection, init_db, backup_db, sync_realtime_account_balances
+from backend.database import (
+    get_connection, init_db, backup_db, sync_realtime_account_balances,
+    get_all_settings, get_setting, set_setting, get_categories_list,
+    add_category, update_category, delete_category, get_supported_banks,
+    update_bank_enabled, clean_all_transactions
+)
 from backend.bank_parser import parse_csv_content, parse_excel_content
 from backend.categorizer import (
-    categorize_transaction, learn_rule_and_retroactively_apply, CATEGORIES,
+    categorize_transaction, learn_rule_and_retroactively_apply, get_active_categories,
     extract_merchant_pattern, find_transfer_counterpart, pair_transfers,
     unpair_transfer, auto_pair_internal_transfers
 )
 from backend.portfolio import sync_google_sheet_portfolio, get_portfolio_summary, fetch_msci_nav, record_fund_subscription_from_statement
 from backend.forecast import calculate_monthly_forecast, get_habits_and_goals_analysis
 from backend.knowledge_base import init_knowledge_base
-from backend.deepseek_service import chat_financial_assistant
+from backend.deepseek_service import chat_financial_assistant, test_deepseek_connection, get_deepseek_config
 from backend.financial_analyst import (
     build_llm_financial_context, get_comprehensive_financial_profile,
     get_monthly_balance_matrix, get_advanced_analytics
 )
 
-app = FastAPI(title="Diego Bank Agent API", version="2.1.0")
+app = FastAPI(title="Spend Agent API", version="2.2.0")
+
 
 # Enable CORS for local dev
 app.add_middleware(
@@ -138,7 +144,161 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     selected_month: Optional[str] = None
 
+class CategoryCreate(BaseModel):
+    name: str
+    color: Optional[str] = "#64748B"
+    icon: Optional[str] = "Tag"
+
+class CategoryUpdate(BaseModel):
+    new_name: Optional[str] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+
+class BankToggle(BaseModel):
+    enabled: bool
+
+class AISettingsUpdate(BaseModel):
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    enabled: Optional[bool] = None
+
+class AITestRequest(BaseModel):
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+
+class GeneralSettingsUpdate(BaseModel):
+    user_name: Optional[str] = None
+    company_name: Optional[str] = None
+    enable_company_expenses: Optional[bool] = None
+    currency: Optional[str] = None
+    onboarding_completed: Optional[bool] = None
+
+class ResetDataRequest(BaseModel):
+    keep_settings: Optional[bool] = True
+
 # --- API Endpoints ---
+
+# --- Categories API ---
+
+@app.get("/api/categories")
+def get_categories_endpoint():
+    return {"categories": get_categories_list()}
+
+@app.post("/api/categories")
+def create_category_endpoint(req: CategoryCreate):
+    try:
+        res = add_category(req.name, req.color or "#64748B", req.icon or "Tag")
+        return {"status": "created", "category": res}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/categories/{category_name}")
+def update_category_endpoint(category_name: str, req: CategoryUpdate):
+    try:
+        res = update_category(category_name, req.new_name, req.color, req.icon)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/categories/{category_name}")
+def delete_category_endpoint(category_name: str, fallback_category: str = "Otras compras"):
+    try:
+        res = delete_category(category_name, fallback_category)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# --- Supported Banks API ---
+
+@app.get("/api/settings/banks")
+def get_supported_banks_endpoint():
+    return {"banks": get_supported_banks()}
+
+@app.put("/api/settings/banks/{bank_id}")
+def update_supported_bank_endpoint(bank_id: str, req: BankToggle):
+    try:
+        res = update_bank_enabled(bank_id, req.enabled)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# --- AI Configuration & Test API ---
+
+@app.get("/api/settings/ai")
+def get_ai_settings_endpoint():
+    cfg = get_deepseek_config()
+    raw_key = cfg.get("api_key", "")
+    masked_key = ""
+    if raw_key:
+        masked_key = (raw_key[:4] + "..." + raw_key[-4:]) if len(raw_key) > 8 else "****"
+    return {
+        "provider": "deepseek",
+        "has_api_key": bool(raw_key),
+        "api_key_masked": masked_key,
+        "model": cfg.get("model", "deepseek-chat"),
+        "enabled": cfg.get("ai_enabled", True)
+    }
+
+@app.post("/api/settings/ai")
+def update_ai_settings_endpoint(req: AISettingsUpdate):
+    if req.api_key is not None:
+        set_setting("deepseek_api_key", req.api_key.strip())
+    if req.model is not None:
+        set_setting("deepseek_model", req.model.strip())
+    if req.enabled is not None:
+        set_setting("ai_enabled", "1" if req.enabled else "0")
+    
+    cfg = get_deepseek_config()
+    raw_key = cfg.get("api_key", "")
+    masked_key = (raw_key[:4] + "..." + raw_key[-4:]) if len(raw_key) > 8 else "****" if raw_key else ""
+    return {
+        "status": "updated",
+        "has_api_key": bool(raw_key),
+        "api_key_masked": masked_key,
+        "model": cfg.get("model", "deepseek-chat"),
+        "enabled": cfg.get("ai_enabled", True)
+    }
+
+@app.post("/api/settings/ai/test")
+def test_ai_connection_endpoint(req: AITestRequest):
+    res = test_deepseek_connection(req.api_key, req.model)
+    return res
+
+# --- General Settings & Wipe API ---
+
+@app.get("/api/settings/general")
+def get_general_settings_endpoint():
+    settings = get_all_settings()
+    return {
+        "user_name": settings.get("user_name", "Mi Espacio"),
+        "company_name": settings.get("company_name", ""),
+        "enable_company_expenses": settings.get("enable_company_expenses", "1") == "1",
+        "currency": settings.get("currency", "EUR"),
+        "onboarding_completed": settings.get("onboarding_completed", "0") == "1"
+    }
+
+@app.put("/api/settings/general")
+def update_general_settings_endpoint(req: GeneralSettingsUpdate):
+    if req.user_name is not None:
+        set_setting("user_name", req.user_name.strip())
+    if req.company_name is not None:
+        set_setting("company_name", req.company_name.strip())
+    if req.enable_company_expenses is not None:
+        set_setting("enable_company_expenses", "1" if req.enable_company_expenses else "0")
+    if req.currency is not None:
+        set_setting("currency", req.currency.strip())
+    if req.onboarding_completed is not None:
+        set_setting("onboarding_completed", "1" if req.onboarding_completed else "0")
+    return {"status": "updated"}
+
+@app.post("/api/settings/reset-data")
+def reset_data_endpoint(req: ResetDataRequest):
+    try:
+        clean_all_transactions(keep_settings=req.keep_settings if req.keep_settings is not None else True)
+        return {"status": "success", "message": "Datos de transacciones, cuentas y préstamos eliminados correctamente."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/summary")
 def get_summary(year: Optional[int] = None, month: Optional[int] = None):
@@ -390,7 +550,7 @@ def batch_update_category(req: BatchUpdateCategoryRequest):
         "is_reimbursable = CASE WHEN ? = 'Gastos de Empresa' THEN 1 ELSE is_reimbursable END",
         "reimbursement_status = CASE WHEN ? = 'Gastos de Empresa' THEN 'pending' ELSE reimbursement_status END",
         "needs_clarification = 0",
-        "notes = 'Categoría actualizada por Diego (por lote)'"
+        "notes = 'Categoría actualizada por el usuario (por lote)'"
     ]
     sql_params = [req.new_category, req.new_category, req.new_category]
     if req.loan_id is not None:
@@ -419,10 +579,10 @@ def batch_update_category(req: BatchUpdateCategoryRequest):
             """, (clean_pat, req.new_category, is_company))
             cursor.execute("""
             INSERT INTO knowledge_base (pattern, category, sample_amount, notes, frequency)
-            VALUES (?, ?, 0, 'Confirmado por Diego en lote', 2)
+            VALUES (?, ?, 0, 'Confirmado por el usuario en lote', 2)
             ON CONFLICT(pattern) DO UPDATE SET
                 category = excluded.category,
-                notes = 'Actualizado por Diego en lote'
+                notes = 'Actualizado por el usuario en lote'
             """, (clean_pat, req.new_category))
 
     conn.commit()
@@ -747,7 +907,7 @@ def get_clarifications():
     return {
         "pending_doubts": rows,
         "count": len(rows),
-        "available_categories": CATEGORIES
+        "available_categories": get_active_categories()
     }
 
 @app.post("/api/clarifications/resolve")
@@ -771,7 +931,7 @@ def resolve_clarification(req: ResolveClarificationRequest):
         reimbursement_status = ?,
         needs_clarification = 0,
         confidence = 1.0,
-        notes = coalesce(notes, '') || ' [Confirmado por Diego]'
+        notes = coalesce(notes, '') || ' [Confirmado por el usuario]'
     WHERE id = ?
     """, (req.category, is_reimb_int, reimb_status, req.transaction_id))
 
@@ -1184,7 +1344,7 @@ def search_loan_candidates(q: str = "", limit: int = 60):
 @app.post("/api/upload")
 async def upload_statement(
     file: UploadFile = File(...),
-    account: str = Form("Santander (*3012)")
+    account: str = Form("Auto")
 ):
     filename = file.filename or ""
     content_bytes = await file.read()
@@ -1230,6 +1390,34 @@ async def upload_statement(
 
     if not parsed_txs:
         raise HTTPException(status_code=400, detail="No se pudieron extraer transacciones del extracto. Revisa el formato.")
+
+    # Check if the detected or specified bank is disabled in user settings
+    try:
+        from database import get_supported_banks
+        supported_map = {b["id"]: b for b in get_supported_banks()}
+        check_acc = (target_account if target_account != "Auto" else (parsed_txs[0]["account"] if parsed_txs else "")).lower()
+        matched_bank_id = None
+        if "santander" in check_acc:
+            matched_bank_id = "santander"
+        elif "amex" in check_acc or "american express" in check_acc:
+            matched_bank_id = "amex"
+        elif "iberia" in check_acc:
+            matched_bank_id = "iberia_cards"
+        elif "n26" in check_acc:
+            matched_bank_id = "n26"
+        elif "myinvestor" in check_acc:
+            matched_bank_id = "myinvestor"
+
+        if matched_bank_id and matched_bank_id in supported_map and not supported_map[matched_bank_id].get("enabled"):
+            b_name = supported_map[matched_bank_id].get("name", matched_bank_id)
+            raise HTTPException(
+                status_code=400,
+                detail=f"El banco '{b_name}' está desactivado en tus Ajustes. Actívalo en la pestaña 'Ajustes > Bancos Soportados' para poder importar sus extractos."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Bank enabled check note: {e}")
 
     conn = get_connection()
     cursor = conn.cursor()

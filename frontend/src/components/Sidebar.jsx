@@ -12,7 +12,8 @@ import {
   ExternalLink,
   Wallet,
   MessageSquare,
-  Landmark
+  Landmark,
+  Settings
 } from 'lucide-react';
 
 export default function Sidebar({ 
@@ -22,7 +23,8 @@ export default function Sidebar({
   capitalGlobal, 
   darkMode, 
   setDarkMode,
-  companyPending
+  companyPending,
+  userName = 'Mi Espacio'
 }) {
   const navItems = [
     { id: 'dashboard', label: 'Visión General', icon: LayoutDashboard },
@@ -52,6 +54,7 @@ export default function Sidebar({
     { id: 'portfolio', label: 'Portfolio & Capital', icon: TrendingUp },
     { id: 'forecast', label: 'Pronósticos & IA', icon: Sparkles },
     { id: 'import', label: 'Importar Extractos', icon: Upload },
+    { id: 'settings', label: 'Ajustes', icon: Settings },
   ];
 
   return (
@@ -65,13 +68,14 @@ export default function Sidebar({
             </div>
             <div className="truncate">
               <h1 className="text-sm font-semibold tracking-tight text-[#37352f] dark:text-[#ebebeb] truncate">
-                Diego Finanzas
+                {userName || 'Spend Agent'}
               </h1>
               <p className="text-[11px] text-[#787774] dark:text-[#9b9b9b] truncate">
-                Gastos Personales • IA
+                Control Financiero • IA
               </p>
             </div>
           </div>
+
 
           {/* Quick Capital Widget */}
           <div 

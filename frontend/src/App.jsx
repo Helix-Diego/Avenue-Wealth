@@ -9,21 +9,31 @@ import PortfolioView from './components/PortfolioView';
 import ForecastView from './components/ForecastView';
 import ImportView from './components/ImportView';
 import LoansView from './components/LoansView';
+import SettingsView from './components/SettingsView';
 import NewTransactionModal from './components/NewTransactionModal';
 import MsciContributionModal from './components/MsciContributionModal';
 import UndoToast from './components/UndoToast';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isOnboarding, setIsOnboarding] = useState(() => {
+    return localStorage.getItem('spend_agent_onboarding_completed') !== 'true';
+  });
+  const [activeTab, setActiveTab] = useState(() => {
+    const completed = localStorage.getItem('spend_agent_onboarding_completed');
+    return completed === 'true' ? 'dashboard' : 'settings';
+  });
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('bank_agent_theme') === 'dark';
   });
 
+  const [userName, setUserName] = useState('Mi Espacio');
   const [summary, setSummary] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [clarifications, setClarifications] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [selectedMonth, setSelectedMonth] = useState('2026-09');
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    return new Date().toISOString().slice(0, 7);
+  });
   const [loading, setLoading] = useState(true);
 
   // Persistent Chat Messages (never lost across tab switches or reloads)
@@ -90,6 +100,9 @@ export default function App() {
       const res = await fetch(url);
       const data = await res.json();
       setSummary(data);
+      if (data?.available_months?.length > 0 && !data.available_months.includes(selectedMonth)) {
+        setSelectedMonth(data.available_months[0]);
+      }
     } catch (err) {
       console.error('Error fetching summary:', err);
     }
@@ -115,7 +128,7 @@ export default function App() {
       const res = await fetch('/api/clarifications');
       const data = await res.json();
       setClarifications(data.pending_doubts || []);
-      if (data.available_categories) {
+      if (data.available_categories && data.available_categories.length > 0) {
         setCategories(data.available_categories);
       }
     } catch (err) {
@@ -123,12 +136,64 @@ export default function App() {
     }
   };
 
+  // Fetch dynamic categories
+  const fetchCategories = async () => {
+    try {
+      const res = await fetch('/api/categories');
+      const data = await res.json();
+      if (data && data.categories) {
+        setCategories(data.categories.map(c => typeof c === 'string' ? c : c.name));
+      }
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+    }
+  };
+
+  // Fetch general user settings (user name, company, etc.)
+  const fetchGeneralSettings = async () => {
+    try {
+      const res = await fetch('/api/settings/general');
+      const data = await res.json();
+      if (data) {
+        if (data.user_name) {
+          setUserName(data.user_name);
+        }
+        const hasCompletedLocal = localStorage.getItem('spend_agent_onboarding_completed') === 'true';
+        if (!data.onboarding_completed && !hasCompletedLocal) {
+          setIsOnboarding(true);
+          setActiveTab('settings');
+        } else {
+          setIsOnboarding(false);
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching general settings:', err);
+    }
+  };
+
+  const handleCompleteOnboarding = async () => {
+    try {
+      await fetch('/api/settings/general', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ onboarding_completed: true })
+      });
+    } catch (e) {
+      console.warn('Error saving onboarding state:', e);
+    }
+    localStorage.setItem('spend_agent_onboarding_completed', 'true');
+    setIsOnboarding(false);
+    setActiveTab('dashboard');
+  };
+
   const refreshAll = async (monthStr = selectedMonth) => {
     setLoading(true);
     await Promise.all([
       fetchSummary(monthStr),
       fetchTransactions(monthStr),
-      fetchClarifications()
+      fetchClarifications(),
+      fetchCategories(),
+      fetchGeneralSettings()
     ]);
     setLoading(false);
   };
@@ -257,6 +322,7 @@ export default function App() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         companyPending={companyPending}
+        userName={userName}
       />
 
       {/* Main Content Area */}
@@ -343,6 +409,24 @@ export default function App() {
             onUploadComplete={() => refreshAll()}
             setActiveTab={setActiveTab}
             setSelectedMonth={setSelectedMonth}
+          />
+        )}
+
+        {activeTab === 'settings' && (
+          <SettingsView
+            onCategoriesUpdated={() => {
+              fetchCategories();
+              fetchSummary();
+            }}
+            onSettingsUpdated={(newSettings) => {
+              if (newSettings?.user_name) {
+                setUserName(newSettings.user_name);
+              }
+              refreshAll();
+            }}
+            darkMode={darkMode}
+            isOnboarding={isOnboarding}
+            onCompleteOnboarding={handleCompleteOnboarding}
           />
         )}
       </main>

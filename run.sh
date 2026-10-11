@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# Bank Agent — Diego Hernández
+# Spend Agent
 # Script de inicio rápido para el agente financiero local
 # ==============================================================================
 
@@ -10,7 +10,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "$DIR"
 
 echo "=========================================================="
-echo "🏦 Iniciando Diego Bank Agent..."
+echo "🏦 Iniciando Spend Agent..."
 echo "=========================================================="
 
 # 1. Verificar entorno virtual de Python

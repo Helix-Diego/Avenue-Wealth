@@ -19,7 +19,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         if fm.fileExists(atPath: "\(possibleRoot)/backend/app.py") {
             projectPath = possibleRoot
         } else {
-            projectPath = "/Users/diegohernandeztcach/Library/CloudStorage/OneDrive-BMCHelix/Documentos/Personal/Bank Agent"
+            projectPath = possibleRoot
         }
 
         // 2. Setup native macOS window
@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             backing: .buffered,
             defer: false
         )
-        window.title = "Bank Agent — Diego Hernández"
+        window.title = "Spend Agent"
         window.titlebarAppearsTransparent = false
         window.delegate = self
         window.minSize = NSSize(width: 960, height: 620)
@@ -65,7 +65,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         progressIndicator.startAnimation(nil)
         container.addSubview(progressIndicator)
 
-        loadingLabel = NSTextField(labelWithString: "🏦 Iniciando Bank Agent y cargando dependencias...")
+        loadingLabel = NSTextField(labelWithString: "🏦 Iniciando Spend Agent y cargando entorno...")
         loadingLabel.font = NSFont.systemFont(ofSize: 15, weight: .medium)
         loadingLabel.textColor = NSColor.secondaryLabelColor
         loadingLabel.alignment = .center
@@ -96,7 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         
-        appMenu.addItem(withTitle: "Acerca de Bank Agent", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(withTitle: "Acerca de Spend Agent", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
         
         let openBrowserItem = NSMenuItem(title: "Abrir en Navegador Externo", action: #selector(openInBrowser), keyEquivalent: "b")
@@ -105,13 +105,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         appMenu.addItem(openBrowserItem)
         
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Ocultar Bank Agent", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Ocultar Spend Agent", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         let hideOthers = NSMenuItem(title: "Ocultar otros", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
         appMenu.addItem(hideOthers)
         appMenu.addItem(withTitle: "Mostrar todo", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(withTitle: "Salir de Bank Agent", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Salir de Spend Agent", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // Edit Menu (Copy/Paste shortcuts for text fields)
         let editMenuItem = NSMenuItem()
@@ -245,7 +245,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     }
 
     func isPortResponding(port: Int) -> Bool {
-        guard let url = URL(string: "http://127.0.0.1:\(port)/api/summary?year=2026&month=9") else { return false }
+        guard let url = URL(string: "http://127.0.0.1:\(port)/api/settings/general") else { return false }
         var request = URLRequest(url: url)
         request.timeoutInterval = 1.0
         let semaphore = DispatchSemaphore(value: 0)

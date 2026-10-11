@@ -31,6 +31,7 @@ yarn-error.log*
 
 # Build artifacts & macOS apps
 dist/
+release/
 frontend/dist
 frontend/dist/
 frontend/dist 2/
@@ -39,6 +40,8 @@ build/
 *.app/
 Bank Agent.app/
 Detener Bank Agent.app/
+Spend Agent.app/
+Detener Spend Agent.app/
 
 # macOS system files
 .DS_Store

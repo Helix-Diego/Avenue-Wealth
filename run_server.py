@@ -46,7 +46,7 @@ def main():
     url = f"http://localhost:{port}"
 
     print("=" * 60)
-    print("🏦 Bank Agent — Diego Hernández")
+    print("🏦 Spend Agent — Control Financiero e IA")
     print(f"🚀 Servidor disponible en: {url}")
     print("💡 Pulsa Ctrl+C para detener el servidor")
     print("=" * 60)

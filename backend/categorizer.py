@@ -3,7 +3,20 @@ from backend.database import get_connection
 from backend.knowledge_base import match_knowledge_base, get_few_shots_for_ai, DIEGO_CATEGORIES
 from backend.deepseek_service import categorize_with_ai
 
-CATEGORIES = DIEGO_CATEGORIES
+def get_active_categories() -> list:
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM categories ORDER BY name ASC")
+        rows = [r[0] for r in cursor.fetchall()]
+        conn.close()
+        if rows:
+            return rows
+    except Exception:
+        pass
+    return DIEGO_CATEGORIES
+
+CATEGORIES = get_active_categories()
 
 COMPANY_AMBIGUOUS_KEYWORDS = [
     "REPSOL", "CEPSA", "BP", "SHELL", "GALP", "GASOLINERA", "PETROPRIX", "PLENOIL",
@@ -181,7 +194,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
             "ENVIADA DESDE N26", "TRANSFERENCIA DE HERNANDEZ TCACH DIEGO", "TRANSFERENCIA INMEDIATA DE DIEGO HERNANDEZ TCACH",
             "HERNANDEZ TCACH DIEGO", "DIEGO HERNANDEZ TCACH", "ES1300495525532312453012", "ES3000493477382014031842",
             "CARD ENDING IN *0871", "ENDING IN *0871"
-        ]):
+        ] + [k for k in [get_setting("user_name", "").upper()] if k and k != "MI ESPACIO"]):
             if not any(w in desc_upper for w in ["LIMPIEZA", "SUAVIZANTE", "DETERGENTE", "GASTOS COMUNES PISO"]):
                 return {
                     "category": "Traspaso entre cuentas",
@@ -191,7 +204,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
                     "clarification_question": None,
                     "suggested_category": "Traspaso entre cuentas",
                     "confidence": 1.0,
-                    "notes": "Traspaso entre cuentas propias (Santander / N26 / MyInvestor)"
+                    "notes": "Traspaso entre cuentas propias"
                 }
         elif "CARLA GARCIA FAYA" in desc_upper or "CARLA GARCIA" in desc_upper:
             return {
@@ -261,7 +274,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
             "A FAVOR DE DIEGO HERNANDEZ TCACH", "A FAVOR DE DIEGO HERNÁNDEZ TCACH",
             "DIEGO HERNANDEZ TCACH", "HERNANDEZ TCACH DIEGO", "ENVIADA DESDE N26",
             "ES1300495525532312453012", "ES3000493477382014031842", "ES1215447889726651128615"
-        ]):
+        ] + [k for k in [get_setting("user_name", "").upper()] if k and k != "MI ESPACIO"]):
             if not any(w in desc_upper for w in ["GASTOS COMUNES PISO", "GASTO EXTRA PISO", "GASTO EXTRAORDINARIO PISO"]):
                 return {
                     "category": "Traspaso entre cuentas",
@@ -384,11 +397,13 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
 
     # Step 2: Unseen / Novel transaction -> Query DeepSeek Light (deepseek-chat)
     few_shots = get_few_shots_for_ai(20)
-    ai_result = categorize_with_ai(description, amount, CATEGORIES, few_shots)
+    current_categories = get_active_categories()
+    ai_result = categorize_with_ai(description, amount, current_categories, few_shots)
 
     chosen_category = ai_result.get("category", "Otras compras")
-    if chosen_category not in CATEGORIES:
+    if chosen_category not in current_categories:
         chosen_category = "Otras compras"
+
 
     is_reimb = ai_result.get("is_reimbursable", 0)
     needs_clarif = 1 if ai_result.get("needs_clarification") else 0
@@ -480,10 +495,10 @@ def learn_rule_and_retroactively_apply(pattern: str, category: str, is_reimbursa
     # Save to knowledge_base
     cursor.execute("""
     INSERT INTO knowledge_base (pattern, category, sample_amount, notes, frequency)
-    VALUES (?, ?, 0, 'Aprendido directamente por Diego', 2)
+    VALUES (?, ?, 0, 'Aprendido directamente por el usuario', 2)
     ON CONFLICT(pattern) DO UPDATE SET
         category = excluded.category,
-        notes = 'Actualizado por Diego'
+        notes = 'Actualizado por el usuario'
     """, (clean_pat, category))
 
     # Also save to category_rules
@@ -507,7 +522,7 @@ def learn_rule_and_retroactively_apply(pattern: str, category: str, is_reimbursa
         reimbursement_status = ?,
         needs_clarification = 0,
         confidence = 1.0,
-        notes = 'Regla confirmada por Diego: ' || ?
+        notes = 'Regla confirmada por el usuario: ' || ?
     WHERE UPPER(description) LIKE ?
     """, (category, is_reimbursable, status, clean_pat, search_term))
 
