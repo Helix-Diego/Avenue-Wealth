@@ -1622,7 +1622,6 @@ async def upload_statement(
 
     # Check if the detected or specified bank is disabled in user settings
     try:
-        from database import get_supported_banks
         supported_map = {b["id"]: b for b in get_supported_banks()}
         check_acc = (target_account if target_account != "Auto" else (parsed_txs[0]["account"] if parsed_txs else "")).lower()
         matched_bank_id = None
