@@ -14,11 +14,17 @@ echo "🏦 Iniciando Spend Agent..."
 echo "=========================================================="
 
 # 1. Verificar entorno virtual de Python
+if ! command -v python3 &>/dev/null; then
+    echo "❌ Error: No se detectó Python 3 en tu sistema macOS."
+    echo "💡 Puedes descargarlo gratis desde https://www.python.org/downloads/ o con 'xcode-select --install'"
+    exit 1
+fi
+
 if [ ! -d "venv" ]; then
     echo "📦 Creando entorno virtual Python..."
     python3 -m venv venv
     ./venv/bin/pip install --upgrade pip
-    ./venv/bin/pip install fastapi uvicorn pydantic httpx python-multipart openpyxl
+    ./venv/bin/pip install -q -r requirements.txt
 fi
 
 # 2. Inicializar base de datos y datos semilla si es necesario
@@ -26,7 +32,7 @@ echo "🔍 Comprobando base de datos y cotizaciones..."
 ./venv/bin/python3 -m backend.seed_data
 
 # 3. Comprobar build del frontend
-if [ ! -d "frontend/dist" ]; then
+if [ ! -d "frontend/dist" ] && [ ! -d "frontend/dist 2" ]; then
     echo "⚡ Construyendo interfaz web..."
     cd frontend && npm install && npm run build && cd ..
 fi
@@ -42,8 +48,9 @@ echo "💡 Pulsa Ctrl+C para detener el servidor"
 
 # Abrir navegador automáticamente en macOS
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    (sleep 1.5 && open "http://localhost:$PORT") &
+    (sleep 1.2 && open "http://localhost:$PORT") &
 fi
 
-# Iniciar servidor Uvicorn
-./venv/bin/uvicorn backend.app:app --host 0.0.0.0 --port $PORT --reload
+# Iniciar servidor
+export PORT=$PORT
+./venv/bin/python3 run_server.py

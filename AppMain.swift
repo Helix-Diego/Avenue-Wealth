@@ -150,9 +150,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         }
     }
 
+    func findSystemPython() -> String {
+        let candidates = [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.14/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",
+            "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3",
+            "/usr/bin/python3"
+        ]
+        let fm = FileManager.default
+        for p in candidates {
+            if fm.isExecutableFile(atPath: p) {
+                return p
+            }
+        }
+        return "/usr/bin/python3"
+    }
+
     func prepareAndLaunchBackend() {
-        // First check if an existing instance of Bank Agent is already responding
-        for checkPort in [8000, 8001, 8002, 8003] {
+        // First check if an existing instance of Spend Agent is already responding
+        for checkPort in 8000...8015 {
             if isPortResponding(port: checkPort) {
                 self.serverPort = checkPort
                 self.loadPage()
@@ -168,15 +189,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         var customEnv = ProcessInfo.processInfo.environment
         customEnv["BANK_AGENT_ROOT"] = projectPath
         customEnv["OPEN_BROWSER"] = "0"
-        customEnv["PATH"] = "/Library/Frameworks/Python.framework/Versions/3.14/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (customEnv["PATH"] ?? "")
+        customEnv["PATH"] = "/Library/Frameworks/Python.framework/Versions/Current/bin:/Library/Frameworks/Python.framework/Versions/3.14/bin:/Library/Frameworks/Python.framework/Versions/3.13/bin:/Library/Frameworks/Python.framework/Versions/3.12/bin:/Library/Frameworks/Python.framework/Versions/3.11/bin:/Library/Frameworks/Python.framework/Versions/3.10/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:" + (customEnv["PATH"] ?? "")
 
         if !fm.fileExists(atPath: venvPython) {
+            let pythonExec = findSystemPython()
+            if !fm.isExecutableFile(atPath: pythonExec) && pythonExec == "/usr/bin/python3" && !fm.fileExists(atPath: "/usr/bin/python3") {
+                DispatchQueue.main.async {
+                    self.loadingLabel.stringValue = "⚠️ Python 3 no encontrado. Por favor instálalo desde python.org"
+                }
+                return
+            }
             DispatchQueue.main.async {
                 self.loadingLabel.stringValue = "📦 Creando entorno virtual Python..."
             }
             let venvProc = Process()
             venvProc.currentDirectoryPath = projectPath
-            venvProc.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            venvProc.executableURL = URL(fileURLWithPath: pythonExec)
             venvProc.arguments = ["-m", "venv", "\(projectPath)/venv"]
             venvProc.environment = customEnv
             try? venvProc.run()
@@ -210,7 +238,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
         customEnv["PORT"] = "\(serverPort)"
 
         DispatchQueue.main.async {
-            self.loadingLabel.stringValue = "🚀 Conectando a Bank Agent en puerto \(self.serverPort)..."
+            self.loadingLabel.stringValue = "🚀 Conectando a Spend Agent en puerto \(self.serverPort)..."
         }
 
         // Launch server process

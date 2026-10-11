@@ -11,6 +11,14 @@ echo "🏦 Spend Agent — Iniciando aplicación local..."
 echo "=========================================================="
 
 # 1. Comprobar y cargar dependencias de Python
+if ! command -v python3 &>/dev/null; then
+    echo "❌ Error: No se detectó Python 3 en tu sistema macOS."
+    echo "💡 Puedes descargarlo gratis desde https://www.python.org/downloads/ o con 'xcode-select --install'"
+    echo ""
+    read -p "Presiona Enter para cerrar esta ventana..."
+    exit 1
+fi
+
 if [ ! -d "venv" ]; then
     echo "📦 Creando entorno virtual Python..."
     python3 -m venv venv
