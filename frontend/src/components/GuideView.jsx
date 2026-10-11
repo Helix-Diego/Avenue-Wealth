@@ -272,6 +272,43 @@ export default function GuideView({ setActiveTab }) {
               content: 'Si un movimiento ya existe en la base de datos, el sistema lo detecta y lo descarta silenciosamente, importando únicamente las operaciones nuevas.'
             }
           ]
+        },
+        {
+          id: 'parser_architecture',
+          title: '3.3 Arquitectura de Parsers & Firmas Estructurales',
+          summary: 'Cómo Spend Agent procesa extractos de múltiples bancos sin almacenar extractos personales en el sistema.',
+          targetTab: 'import',
+          tabButtonLabel: 'Ir a Importar Extractos',
+          tags: ['parser', 'firmas', 'caixabank', 'revolut', 'ing', 'santander', 'privacidad'],
+          readingTime: '3 min',
+          sections: [
+            {
+              heading: '¿Cómo reconoce la estructura de tus bancos sin guardar extractos?',
+              content: 'Por principios estrictos de privacidad y neutralidad, Spend Agent NO almacena tus extractos bancarios personales en el código ni en el paquete de distribución. La aplicación viaja 100% vacía y segura.'
+            },
+            {
+              heading: 'Firmas Estructurales Deterministas (Signature Parsers)',
+              content: 'En su lugar, el motor de backend (`backend/bank_parser.py`) incorpora una biblioteca de firmas estructurales y expresiones regulares que reconocen automáticamente el diseño y peculiaridades de cada banco:'
+            },
+            {
+              bullets: [
+                'Banco Santander: Detecta extractos de cuenta corriente y tarjeta de crédito por sus columnas de fecha de operación, fecha valor e importes con signo estándar.',
+                'CaixaBank: Identifica delimitadores por punto y coma (;), cabeceras de Concepto;Fecha;Importe;Saldo y codificaciones especiales ISO-8859/UTF-8.',
+                'Revolut: Soporta extractos multidivisa (EUR, USD, CHF, etc.), cabeceras en inglés y español ("Started Date", "Completed Date", "State"), transferencias instantáneas y redondeos ("Pocket / Vault Vaults").',
+                'ING Direct: Reconoce firmas "Movimientos de la cuenta", columnas de "F. Valor" y "F. Operación".',
+                'N26: Soporta tanto fechas formateadas como números de fecha serial de Excel (ej. 46038) y mapea las columnas internacionales de Partner Name.',
+                'American Express: Detecta automáticamente el formato Amex e invierte los signos contables para que los consumos computen como gasto negativo y los pagos como abonos.',
+                'Iberia Cards: Detección de liquidaciones de tarjeta y cargos mensuales de Visa/Mastercard.',
+                'MyInvestor: Procesamiento de cuentas de inversión, aportaciones a fondos indexados (Fidelity MSCI World) y cuentas remuneradas.',
+                'Formato Genérico: Motor heurístico universal que permite importar cualquier archivo CSV o Excel que tenga al menos Fecha, Concepto e Importe.'
+              ]
+            },
+            {
+              type: 'tip',
+              title: 'Prueba Rápida con Formatos de Muestra',
+              text: 'En la pantalla de importación, dispones de botones de prueba rápida ("Santander", "Amex", "Iberia Cards", "N26", "MyInvestor", "CaixaBank", "Revolut", etc.) que cargan extractos sintéticos de ejemplo con un solo clic para comprobar cómo responde el motor.'
+            }
+          ]
         }
       ]
     },
@@ -327,21 +364,62 @@ export default function GuideView({ setActiveTab }) {
           ]
         },
         {
-          id: 'splits_and_transfers',
-          title: '4.3 División de Tickets (Splits) & Traspasos',
-          summary: 'Divide tickets compartidos y concilia transferencias entre tus propias cuentas.',
+          id: 'split_transactions',
+          title: '4.3 Cortar / Dividir Transacción (Herramienta Split & Bizums)',
+          summary: 'Desglosa cobros o pagos combinados como Bizums que agrupan varias transacciones distintas.',
           targetTab: 'transactions',
-          tabButtonLabel: 'Ver Transacciones',
-          tags: ['split', 'dividir', 'traspasos', 'liquidaciones'],
+          tabButtonLabel: 'Ir a Transacciones',
+          tags: ['split', 'cortar', 'bizum', 'desglose', 'tijeras', 'subtransacciones'],
           readingTime: '3 min',
           sections: [
             {
-              heading: 'División de Transacciones (Splits)',
-              content: '¿Hiciste una compra en El Corte Inglés de 100€ que incluye ropa y comida? Con el botón de tijeras puedes dividir la transacción en sub-partidas independientes con diferentes categorías para que tu contabilidad sea 100% fiel a la realidad.'
+              heading: '¿Por qué es fundamental la herramienta de "Cortar Transacción"?',
+              content: 'En la contabilidad del día a día, con frecuencia un único apunte bancario agrupa diferentes conceptos de gasto. El caso más típico y frecuente son los BIZUMS:'
             },
             {
-              heading: 'Traspasos Propios y Liquidación de Tarjetas',
-              content: 'Los movimientos categorizados como "Traspaso entre cuentas" o "Liquidación Tarjetas" son neutralizados en la Matriz de Balance para evitar duplicidades: el gasto ya se computó al comprar con la tarjeta de crédito, por lo que pagar el recibo a fin de mes es un traspaso interno neutro.'
+              bullets: [
+                'Bizum de Gastos Compartidos: Un amigo te transfiere 55 € por Bizum que incluye 35 € de una cena en un restaurante y 20 € de unas entradas de cine que adelantaste tú.',
+                'Bizum con Gasto de Empresa: Envías o recibes un Bizum de 60 € donde 40 € son de compras personales y 20 € corresponden a un taxi o comida reembolsable por tu empresa.',
+                'Compras en Grandes Superficies: Un ticket de 90 € en El Corte Inglés, Carrefour o Amazon que combina 50 € de alimentación y 40 € de ropa o electrónica.'
+              ]
+            },
+            {
+              heading: 'Cómo Cortar un Movimiento Paso a Paso con las Tijeras',
+              content: 'Si dejas el Bizum o compra como un apunte único, distorsionará tus estadísticas por categoría. Con Spend Agent puedes cortarlo en segundos:'
+            },
+            {
+              bullets: [
+                '1. Localiza el movimiento: En la tabla de Transacciones, pulsa el icono de las Tijeras ("Desglosar movimiento en varias categorías") situado a la derecha de la fila.',
+                '2. Añade las sub-partidas: Por defecto se divide en 2 partes, pero puedes pulsar "Añadir otra parte" para desglosarlo en 3, 4 o tantas como necesites.',
+                '3. Asigna importes y categorías: Establece el importe exacto de cada fracción (ej. 35 € para "Restaurantes" y 20 € para "Entretenimiento").',
+                '4. Etiquetado Reembolsable Individual: Si una de las fracciones corresponde a un gasto de tu empresa, puedes marcar la casilla "Gasto de Empresa Reembolsable" exclusivamente para esa parte.',
+                '5. Control de Cuadre Matemático en Vivo: El modal te muestra en tiempo real el indicador "Restante por asignar". El botón de guardar sólo se activa cuando el total asignado coincide al 100% (al céntimo) con el importe bancario original.',
+                '6. Resultado Contable Limpio: Al guardar, la transacción original se sustituye por las sub-partidas con el distintivo visual "Desglosado", manteniendo tu saldo cuadrado y tus categorías perfectas.'
+              ]
+            },
+            {
+              type: 'tip',
+              title: 'Reversibilidad Total',
+              text: 'Si en el futuro deseas re-agrupar el movimiento o eliminar una fracción, el sistema conserva el vínculo original en la base de datos.'
+            }
+          ]
+        },
+        {
+          id: 'transfers_and_settlements',
+          title: '4.4 Conciliación Bilateral de Traspasos & Liquidaciones',
+          summary: 'Deduplica traspasos internos entre tus bancos y neutraliza recibos de tarjeta de crédito.',
+          targetTab: 'transactions',
+          tabButtonLabel: 'Ver Transacciones',
+          tags: ['traspasos', 'liquidaciones', 'tarjetas', 'conciliación'],
+          readingTime: '2 min',
+          sections: [
+            {
+              heading: 'Vinculación Bilateral de Traspasos Propios',
+              content: 'Cuando transfieres dinero entre tus propias cuentas (por ejemplo, de tu cuenta corriente a tu cuenta de ahorro o a Revolut), se generan dos movimientos: una salida en el banco origen y una entrada en el banco destino. El agente detecta ambas operaciones por fecha e importe y las vincula bilateralmente como un traspaso neutro para no inflar artificialmente tus ingresos ni tus gastos.'
+            },
+            {
+              heading: 'Liquidación de Tarjetas de Crédito',
+              content: 'Al pagar el recibo mensual de tu tarjeta de crédito (Iberia Cards, Amex o Santander Tarjeta), el dinero sale de tu cuenta corriente. Spend Agent neutraliza este cargo clasificándolo como "Liquidación Tarjetas", ya que cada compra individual ya fue computada el día en que se produjo con la tarjeta.'
             }
           ]
         }
@@ -590,14 +668,89 @@ export default function GuideView({ setActiveTab }) {
       ]
     },
     {
+      id: 'loans',
+      title: '9. Créditos, Préstamos & Compras a Plazos',
+      icon: Layers,
+      color: 'text-indigo-600 dark:text-indigo-400',
+      articles: [
+        {
+          id: 'loans_management',
+          title: '9.1 Gestión de Préstamos y Financiaciones',
+          summary: 'Diferencia entre préstamos personales con desembolso y compras fraccionadas a plazos.',
+          targetTab: 'loans',
+          tabButtonLabel: 'Ir a Créditos & Financiaciones',
+          tags: ['préstamos', 'créditos', 'financiación', 'deuda', 'intereses', 'tin', 'tae'],
+          readingTime: '3 min',
+          sections: [
+            {
+              heading: 'Los Dos Tipos de Financiación Soportados',
+              content: 'En Spend Agent puedes dar de alta y controlar cualquier tipo de pasivo financiero:'
+            },
+            {
+              bullets: [
+                '1. Préstamo Personal Bancario (Con Desembolso): Un crédito donde recibes el capital en tu cuenta corriente (ej. 10.000 € de Santander o BBVA) y abonas cuotas mensuales. El sistema neutraliza contablemente el ingreso inicial para que no figure como renta salarial ficticia.',
+                '2. Compra a Plazos / Fraccionada (Sin Desembolso): Una compra directa de un bien o servicio diferida en varias cuotas (ej. un ordenador de 1.800 € financiado a 12 meses, un tratamiento o un billete de avión). No hay abono de efectivo previo, sólo las cuotas recurrentes.'
+              ]
+            },
+            {
+              heading: 'Parámetros y Cálculo Automático de Cuota Francesa',
+              content: 'Al registrar un nuevo crédito en el modal, defines:'
+            },
+            {
+              bullets: [
+                'Entidad Financiera y Nombre: Ej. "Préstamo Coche Santander" o "Apple MacBook Pro Plazos".',
+                'Capital Inicial Financiado (€): El importe total prestado.',
+                'Tipo de Interés Anual (% TIN / TAE) y Plazo (Meses): El motor calcula matemáticamente la cuota mensual mediante el sistema de amortización francés.',
+                'Patrón de Detección Bancaria: Una palabra clave del extracto (ej. "PRESTAMO", "FINANCIACION", "CUOTA SANTANDER") para que el agente reconozca y vincule automáticamente cada cuota mensual cuando importes nuevos extractos.'
+              ]
+            },
+            {
+              heading: 'Impacto en el Patrimonio Neto Real',
+              content: 'El capital pendiente (deuda viva) de todos tus préstamos activos se suma automáticamente y se descuenta de tus activos brutos en el Dashboard y en la vista de Portfolio, mostrando en todo momento tu Patrimonio Neto Real fidedigno.'
+            }
+          ]
+        },
+        {
+          id: 'loans_amortization_sim',
+          title: '9.2 Amortización Extraordinaria & Ahorro de Intereses',
+          summary: 'Simula el impacto de anticipar capital: compara reducir cuota mensual vs reducir plazo en meses.',
+          targetTab: 'loans',
+          tabButtonLabel: 'Probar Simulador en Créditos',
+          tags: ['amortización', 'simulador', 'ahorro intereses', 'anticipar capital'],
+          readingTime: '3 min',
+          sections: [
+            {
+              heading: 'Simulador de Amortización Extraordinaria',
+              content: 'Si acumulas ahorro o recibes un ingreso extraordinario (paga extra, bonus, reembolso) y quieres valorar amortizar parte de tu préstamo, cada tarjeta de crédito incluye un botón "Simular Amortización Extraordinaria".'
+            },
+            {
+              heading: 'Comparativa en Tiempo Real: Opción 1 vs Opción 2',
+              content: 'Al introducir el capital a amortizar (ej. 1.500 € o 3.000 €), el simulador calcula simultáneamente las dos alternativas bancarias:'
+            },
+            {
+              bullets: [
+                'Opción A: Reducir Cuota Mensual: Mantienes la fecha de vencimiento final del préstamo, pero tu cuota mensual disminuye inmediatamente. Es la mejor opción si buscas desahogar tu flujo de caja mensual y aumentar tu margen de gasto seguro.',
+                'Opción B: Reducir Plazo (Meses): Mantienes la cuota mensual idéntica a la actual, pero terminas de pagar el préstamo varios meses o años antes. Es la opción más eficiente financieramente porque elimina el devengo de intereses en los meses suprimidos, logrando el máximo ahorro total en intereses bancarios.'
+              ]
+            },
+            {
+              type: 'tip',
+              title: 'Cálculo del Ahorro Total',
+              text: 'El simulador te muestra exactamente el dinero que te ahorras en intereses con un indicador verde destacado ("Ahorro: +XXX,XX €"), permitiéndote tomar decisiones informadas antes de hablar con tu entidad bancaria.'
+            }
+          ]
+        }
+      ]
+    },
+    {
       id: 'chat',
-      title: '9. Asistente Conversacional (Chat IA)',
+      title: '10. Asistente Conversacional (Chat IA)',
       icon: MessageSquare,
       color: 'text-teal-600 dark:text-teal-400',
       articles: [
         {
           id: 'chat_queries',
-          title: '9.1 Consultas en Lenguaje Natural',
+          title: '10.1 Consultas en Lenguaje Natural',
           summary: 'Habla con tu asesor financiero personal sobre tus gastos, anomalías y consejos de optimización.',
           targetTab: 'chat',
           tabButtonLabel: 'Abrir Chat Asistente',
@@ -620,7 +773,7 @@ export default function GuideView({ setActiveTab }) {
         },
         {
           id: 'chat_memory',
-          title: '9.2 Historial Persistente & Privacidad',
+          title: '10.2 Historial Persistente & Privacidad',
           summary: 'Las conversaciones se guardan en tu navegador hasta que pulses "Nuevo Chat".',
           targetTab: 'chat',
           tabButtonLabel: 'Ir al Chat',
