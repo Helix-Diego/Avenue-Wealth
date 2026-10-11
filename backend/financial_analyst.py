@@ -1014,7 +1014,7 @@ def build_llm_financial_context(user_query: Optional[str] = None) -> str:
     lines.append(f"  * Ganancia Acumulada: {fund.get('pnl_eur', 0.0):+,.2f} € ({fund.get('pnl_pct', 0.0):+.2f}%)")
 
     stocks = portfolio.get("stocks", {})
-    lines.append(f"- **Cartera Acciones Google Sheets (Finnhub API)**: {stocks.get('total_value_eur', 0.0):,.2f} €")
+    lines.append(f"- **Cartera de Acciones (Finnhub API)**: {stocks.get('total_value_eur', 0.0):,.2f} €")
     for s in stocks.get("items", []):
         lines.append(f"  * {s['symbol']}: {s['shares']} acciones @ ${s['current_price']:.2f} (Total: {s.get('value_eur', 0.0):,.2f} € / PnL: {s.get('pnl_eur', 0.0):+,.2f} €)")
 

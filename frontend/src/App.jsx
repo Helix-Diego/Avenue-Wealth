@@ -11,7 +11,7 @@ import ImportView from './components/ImportView';
 import LoansView from './components/LoansView';
 import SettingsView from './components/SettingsView';
 import NewTransactionModal from './components/NewTransactionModal';
-import MsciContributionModal from './components/MsciContributionModal';
+import FundContributionModal from './components/FundContributionModal';
 import UndoToast from './components/UndoToast';
 
 export default function App() {
@@ -72,7 +72,8 @@ export default function App() {
 
   // Modals
   const [isNewTxOpen, setIsNewTxOpen] = useState(false);
-  const [isMsciOpen, setIsMsciOpen] = useState(false);
+  const [isFundContributionOpen, setIsFundContributionOpen] = useState(false);
+  const [selectedFundForModal, setSelectedFundForModal] = useState(null);
 
   // Toggle Dark Mode
   useEffect(() => {
@@ -286,25 +287,17 @@ export default function App() {
     }
   };
 
-  const handleSyncSheets = async () => {
+  const handleSaveFundContribution = async (contribData) => {
     try {
-      await fetch('/api/portfolio/sync-sheets', { method: 'POST' });
-      await fetchSummary();
-    } catch (err) {
-      console.error('Error syncing Google Sheets:', err);
-    }
-  };
-
-  const handleSaveMsciContribution = async (contribData) => {
-    try {
-      await fetch('/api/portfolio/msci-contribution', {
+      const isin = contribData.fund_isin || 'IE00BYX5P602';
+      await fetch(`/api/portfolio/funds/${encodeURIComponent(isin)}/contribution`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(contribData)
       });
       await refreshAll();
     } catch (err) {
-      console.error('Error saving MSCI contribution:', err);
+      console.error('Error saving fund contribution:', err);
     }
   };
 
@@ -391,8 +384,11 @@ export default function App() {
             portfolio={summary?.portfolio}
             summary={summary}
             darkMode={darkMode}
-            onSyncSheets={handleSyncSheets}
-            onOpenMsciModal={() => setIsMsciOpen(true)}
+            onOpenContributionModal={(isin) => {
+              setSelectedFundForModal(isin || null);
+              setIsFundContributionOpen(true);
+            }}
+            onOpenMsciModal={() => setIsFundContributionOpen(true)}
             onRefreshPortfolio={() => fetchSummary()}
             setActiveTab={setActiveTab}
           />
@@ -439,11 +435,17 @@ export default function App() {
         categories={categories}
       />
 
-      <MsciContributionModal
-        isOpen={isMsciOpen}
-        onClose={() => setIsMsciOpen(false)}
-        onSave={handleSaveMsciContribution}
-        currentNav={summary?.portfolio?.fund?.latest_nav || 12.1018}
+      <FundContributionModal
+        isOpen={isFundContributionOpen}
+        onClose={() => {
+          setIsFundContributionOpen(false);
+          setSelectedFundForModal(null);
+        }}
+        onSave={handleSaveFundContribution}
+        funds={summary?.portfolio?.funds || []}
+        selectedFundIsin={selectedFundForModal}
+        banksList={summary?.banks || []}
+        accountsList={summary?.portfolio?.bank_accounts || []}
       />
 
       {/* Timed Undo Notification */}

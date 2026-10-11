@@ -102,7 +102,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
             "clarification_question": None,
             "suggested_category": "Inversiones y ahorros",
             "confidence": 1.0,
-            "notes": "Operación de acciones en MyInvestor (sincronizada vía Google Sheets)"
+            "notes": "Operación de inversión en MyInvestor"
         }
 
     # 4. MyInvestor transfers

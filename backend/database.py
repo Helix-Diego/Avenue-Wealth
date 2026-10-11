@@ -196,6 +196,22 @@ def init_db():
         cursor.execute("ALTER TABLE bank_accounts ADD COLUMN initial_balance REAL DEFAULT 0.0")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE supported_banks ADD COLUMN alias TEXT DEFAULT NULL")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE fund_contributions ADD COLUMN fund_isin TEXT DEFAULT 'IE00BYX5P602'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE fund_contributions ADD COLUMN funding_account TEXT DEFAULT NULL")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        cursor.execute("ALTER TABLE portfolio_stocks ADD COLUMN name TEXT DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
 
     # Ensure loans table has loan_type, financed_item, disbursement_tx_id
     cursor.execute("""
@@ -486,6 +502,66 @@ def update_bank_enabled(bank_id: str, enabled: bool) -> dict:
     conn.close()
     return {"bank_id": bank_id, "enabled": enabled}
 
+def update_bank_alias(bank_id: str, alias: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    clean_alias = alias.strip() if alias and alias.strip() else None
+    cursor.execute("UPDATE supported_banks SET alias = ? WHERE id = ?", (clean_alias, bank_id))
+    conn.commit()
+    conn.close()
+    return {"bank_id": bank_id, "alias": clean_alias}
+
+def update_bank_details(bank_id: str, enabled: bool = None, alias: str = None) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    updates = []
+    params = []
+    if enabled is not None:
+        updates.append("enabled = ?")
+        params.append(1 if enabled else 0)
+    if alias is not None:
+        clean_alias = alias.strip() if alias.strip() else None
+        updates.append("alias = ?")
+        params.append(clean_alias)
+    if updates:
+        params.append(bank_id)
+        cursor.execute(f"UPDATE supported_banks SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+    cursor.execute("SELECT * FROM supported_banks WHERE id = ?", (bank_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else {"bank_id": bank_id}
+
+def get_bank_alias_map() -> dict:
+    """
+    Returns mappings from bank_id and bank_name to custom alias if configured.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, alias FROM supported_banks")
+    rows = cursor.fetchall()
+    conn.close()
+    alias_map = {}
+    for r in rows:
+        alias = r["alias"]
+        if alias and alias.strip():
+            alias_map[r["id"].lower()] = alias.strip()
+            alias_map[r["name"].lower()] = alias.strip()
+            # Also partial names
+            if "santander" in r["id"].lower():
+                alias_map["santander"] = alias.strip()
+                alias_map["banco santander"] = alias.strip()
+            if "amex" in r["id"].lower():
+                alias_map["amex"] = alias.strip()
+                alias_map["american express"] = alias.strip()
+            if "iberia" in r["id"].lower():
+                alias_map["iberia cards"] = alias.strip()
+            if "n26" in r["id"].lower():
+                alias_map["n26"] = alias.strip()
+            if "myinvestor" in r["id"].lower():
+                alias_map["myinvestor"] = alias.strip()
+    return alias_map
+
 def clean_all_transactions(keep_settings: bool = True):
     """
     Completely wipes all personal transactions, loans, credit cards,
@@ -498,7 +574,7 @@ def clean_all_transactions(keep_settings: bool = True):
     cursor.execute("DELETE FROM fund_contributions")
     cursor.execute("DELETE FROM portfolio_stocks")
     cursor.execute("DELETE FROM bank_accounts")
-    cursor.execute("UPDATE fund_info SET total_shares = 0.0, last_updated = datetime('now') WHERE isin = 'IE00BYX5P602'")
+    cursor.execute("UPDATE fund_info SET total_shares = 0.0, last_updated = datetime('now')")
     if not keep_settings:
         cursor.execute("DELETE FROM user_settings WHERE key NOT IN ('deepseek_api_key', 'finnhub_api_key')")
     conn.commit()

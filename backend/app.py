@@ -12,7 +12,8 @@ from backend.database import (
     get_connection, init_db, backup_db, sync_realtime_account_balances,
     get_all_settings, get_setting, set_setting, get_categories_list,
     add_category, update_category, delete_category, get_supported_banks,
-    update_bank_enabled, clean_all_transactions
+    update_bank_enabled, update_bank_alias, update_bank_details,
+    get_bank_alias_map, clean_all_transactions
 )
 from backend.bank_parser import parse_csv_content, parse_excel_content
 from backend.categorizer import (
@@ -20,7 +21,13 @@ from backend.categorizer import (
     extract_merchant_pattern, find_transfer_counterpart, pair_transfers,
     unpair_transfer, auto_pair_internal_transfers
 )
-from backend.portfolio import sync_google_sheet_portfolio, get_portfolio_summary, fetch_msci_nav, record_fund_subscription_from_statement
+from backend.portfolio import (
+    get_portfolio_summary, fetch_msci_nav, record_fund_subscription_from_statement,
+    search_stocks_finnhub, fetch_live_stock_quote, add_or_update_stock_holding,
+    delete_stock_holding, refresh_all_stock_quotes, fetch_fund_nav_and_name,
+    add_or_update_fund, delete_fund, record_fund_contribution,
+    delete_fund_contribution, refresh_all_funds_nav
+)
 from backend.forecast import calculate_monthly_forecast, get_habits_and_goals_analysis
 from backend.knowledge_base import init_knowledge_base
 from backend.deepseek_service import chat_financial_assistant, test_deepseek_connection, get_deepseek_config
@@ -154,8 +161,30 @@ class CategoryUpdate(BaseModel):
     color: Optional[str] = None
     icon: Optional[str] = None
 
-class BankToggle(BaseModel):
-    enabled: bool
+class BankUpdateRequest(BaseModel):
+    enabled: Optional[bool] = None
+    alias: Optional[str] = None
+
+class StockHoldingRequest(BaseModel):
+    symbol: str
+    name: Optional[str] = ""
+    shares: float
+    avg_price: float
+    currency: Optional[str] = "USD"
+
+class FundCreateRequest(BaseModel):
+    isin: str
+    name: Optional[str] = None
+    latest_nav: Optional[float] = 0.0
+    currency: Optional[str] = "EUR"
+
+class FundContributionRequest(BaseModel):
+    date: str
+    invested_amount: float
+    nav_price: Optional[float] = None
+    shares: Optional[float] = None
+    funding_account: Optional[str] = "Santander"
+    notes: Optional[str] = ""
 
 class AISettingsUpdate(BaseModel):
     api_key: Optional[str] = None
@@ -215,9 +244,9 @@ def get_supported_banks_endpoint():
     return {"banks": get_supported_banks()}
 
 @app.put("/api/settings/banks/{bank_id}")
-def update_supported_bank_endpoint(bank_id: str, req: BankToggle):
+def update_supported_bank_endpoint(bank_id: str, req: BankUpdateRequest):
     try:
-        res = update_bank_enabled(bank_id, req.enabled)
+        res = update_bank_details(bank_id, enabled=req.enabled, alias=req.alias)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -324,12 +353,16 @@ def get_summary(year: Optional[int] = None, month: Optional[int] = None):
     cursor.execute("SELECT DISTINCT account FROM transactions ORDER BY account ASC")
     available_accounts = [r["account"] for r in cursor.fetchall() if r["account"]]
 
+    cursor.execute("SELECT id, name, alias, enabled FROM supported_banks ORDER BY name ASC")
+    supported_banks = [dict(r) for r in cursor.fetchall()]
+
     conn.close()
 
     return {
         "current_month": f"{y:04d}-{m:02d}",
         "available_months": available_months if available_months else [f"{y:04d}-{m:02d}"],
         "available_accounts": available_accounts,
+        "banks": supported_banks,
         "pending_doubts_count": pending_doubts_count,
         "forecast": forecast,
         "portfolio": portfolio
@@ -356,12 +389,34 @@ def get_transactions(
     """
     params = []
 
+    alias_map = get_bank_alias_map()
+
     if month and month != "all":
         query += " AND t.date LIKE ?"
         params.append(f"{month}%")
     if account and account != "all":
-        query += " AND t.account = ?"
-        params.append(account)
+        # Check if the requested account filter is a bank alias or matches bank
+        matched_keys = [account]
+        for b_key, b_alias in alias_map.items():
+            if b_alias and (b_alias.lower() == account.lower() or account.lower() in b_alias.lower()):
+                matched_keys.append(b_key)
+                if "santander" in b_key:
+                    matched_keys.extend(["Banco Santander", "Santander", "Santander (*3012)", "Santander Ahorro (*1842)", "Santander Tarjeta (*0871)"])
+                elif "amex" in b_key:
+                    matched_keys.extend(["American Express", "Amex", "American Express Platinum"])
+                elif "iberia" in b_key:
+                    matched_keys.extend(["Iberia Cards", "Iberia Cards (*2366)"])
+                elif "n26" in b_key:
+                    matched_keys.extend(["N26", "N26 (*7089)"])
+                elif "myinvestor" in b_key:
+                    matched_keys.extend(["MyInvestor"])
+
+        unique_matches = list(set(matched_keys))
+        placeholders = ", ".join(["?"] * len(unique_matches))
+        query += f" AND (t.account IN ({placeholders}) OR t.account LIKE ?)"
+        params.extend(unique_matches)
+        params.append(f"%{account}%")
+
     if category and category != "all":
         query += " AND t.category = ?"
         params.append(category)
@@ -382,6 +437,15 @@ def get_transactions(
     cursor.execute(query, params)
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
+
+    # Decorate rows with bank alias
+    for r in rows:
+        acc_raw = (r.get("account") or "").lower()
+        r["account_alias"] = None
+        for b_key, b_alias in alias_map.items():
+            if b_key in acc_raw or acc_raw in b_key:
+                r["account_alias"] = b_alias
+                break
 
     return {"transactions": rows, "count": len(rows)}
 
@@ -1065,11 +1129,111 @@ def link_reimbursement(req: LinkReimbursementRequest):
 def get_portfolio():
     return get_portfolio_summary()
 
-@app.post("/api/portfolio/sync-sheets")
-def sync_portfolio_from_sheets():
-    result = sync_google_sheet_portfolio()
+# --- Stocks (Finnhub Live Search, Quotes & Positions) ---
+
+@app.get("/api/stocks/search")
+def search_stocks_endpoint(q: str):
+    return {"results": search_stocks_finnhub(q)}
+
+@app.get("/api/stocks/quote")
+def get_stock_quote_endpoint(symbol: str):
+    return fetch_live_stock_quote(symbol)
+
+@app.post("/api/stocks")
+def add_or_update_stock_endpoint(req: StockHoldingRequest):
+    try:
+        return add_or_update_stock_holding(
+            symbol=req.symbol,
+            name=req.name or "",
+            shares=req.shares,
+            avg_price=req.avg_price,
+            currency=req.currency or "USD"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/stocks/{symbol}")
+def delete_stock_endpoint(symbol: str):
+    try:
+        return delete_stock_holding(symbol)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/stocks/refresh")
+def refresh_stocks_endpoint():
+    updated = refresh_all_stock_quotes()
     summary = get_portfolio_summary()
-    return {"sync_result": result, "summary": summary}
+    return {"updated": updated, "summary": summary}
+
+# --- Generic Mutual Funds (Fondos de Inversión) ---
+
+@app.get("/api/portfolio/funds")
+def list_funds_endpoint():
+    summary = get_portfolio_summary()
+    return {"funds": summary.get("funds", []), "summary": summary.get("funds_summary", {})}
+
+@app.get("/api/portfolio/funds/lookup")
+def lookup_fund_endpoint(isin: str):
+    return fetch_fund_nav_and_name(isin)
+
+@app.post("/api/portfolio/funds")
+def create_fund_endpoint(req: FundCreateRequest):
+    try:
+        return add_or_update_fund(
+            isin=req.isin,
+            name=req.name,
+            latest_nav=req.latest_nav or 0.0,
+            currency=req.currency or "EUR"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/portfolio/funds/{isin}")
+def delete_fund_endpoint(isin: str):
+    try:
+        return delete_fund(isin)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/portfolio/funds/{isin}/contribution")
+def add_fund_contribution_endpoint(isin: str, req: FundContributionRequest):
+    try:
+        return record_fund_contribution(
+            isin=isin,
+            date_str=req.date,
+            invested_amount=req.invested_amount,
+            nav_price=req.nav_price,
+            shares=req.shares,
+            notes=req.notes or "",
+            funding_account=req.funding_account or "Santander"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/portfolio/funds/contributions/{contrib_id}")
+def delete_fund_contribution_endpoint(contrib_id: int):
+    try:
+        return delete_fund_contribution(contrib_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/portfolio/funds/refresh-all")
+def refresh_funds_endpoint():
+    updated = refresh_all_funds_nav()
+    summary = get_portfolio_summary()
+    return {"updated": updated, "summary": summary}
+
+@app.post("/api/portfolio/msci-contribution")
+def add_msci_contribution_legacy(req: MSCIContributionRequest):
+    return record_fund_contribution(
+        isin="IE00BYX5P602",
+        date_str=req.date,
+        invested_amount=req.invested_amount,
+        nav_price=req.nav_price,
+        shares=req.shares,
+        notes=req.notes or "Aportación Fidelity MSCI World",
+        funding_account="Santander"
+    )
 
 @app.get("/api/accounts")
 def get_accounts():
@@ -1086,7 +1250,6 @@ def update_account_balance(req: AccountBalanceUpdate):
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
-    # Calculate initial_balance so that initial_balance + sum(txs) = req.balance
     cursor.execute("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE account = ?", (req.account_name,))
     tx_sum = float(cursor.fetchone()[0] or 0.0)
     adjusted_initial = req.balance - tx_sum
@@ -1099,42 +1262,6 @@ def update_account_balance(req: AccountBalanceUpdate):
     sync_realtime_account_balances(conn)
     conn.close()
     return {"status": "updated", "account": req.account_name, "balance": req.balance}
-
-@app.post("/api/portfolio/msci-contribution")
-def add_msci_contribution(req: MSCIContributionRequest):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    nav = req.nav_price if (req.nav_price and req.nav_price > 0) else fetch_msci_nav()
-    shares = req.shares if req.shares > 0 else (req.invested_amount / nav if nav > 0 else 0)
-
-    cursor.execute("""
-    INSERT INTO fund_contributions (date, shares, invested_amount, nav_price, notes)
-    VALUES (?, ?, ?, ?, ?)
-    """, (req.date, shares, req.invested_amount, nav, req.notes))
-
-    cursor.execute("SELECT SUM(shares) FROM fund_contributions")
-    total_shares = cursor.fetchone()[0] or 0.0
-
-    cursor.execute("""
-    UPDATE fund_info
-    SET total_shares = ?, latest_nav = ?, last_updated = ?
-    WHERE isin = 'IE00BYX5P602'
-    """, (total_shares, nav, datetime.now().isoformat()))
-
-    # Register corresponding outflow in transactions
-    cursor.execute("""
-    INSERT INTO transactions (
-        date, account, description, raw_description, amount, currency,
-        category, is_reimbursable, reimbursement_status, needs_clarification,
-        confidence, notes
-    ) VALUES (?, 'Santander (*3012)', ?, ?, ?, 'EUR', 'Inversiones y ahorros', 0, 'none', 0, 1.0, 'Aportación registrada a Fidelity MSCI World')
-    """, (req.date, f"Aportación MSCI World ({shares:.2f} participaciones)", f"Aportación MSCI World ({shares:.2f} participaciones)", -req.invested_amount))
-
-    conn.commit()
-    conn.close()
-
-    return {"status": "created", "total_shares": total_shares, "latest_nav": nav}
 
 # --- Forecast & Recommendations ---
 

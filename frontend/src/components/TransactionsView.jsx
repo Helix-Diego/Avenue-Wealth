@@ -133,6 +133,17 @@ export default function TransactionsView({
     }
   };
 
+  // Bank list & aliases state
+  const [banksList, setBanksList] = useState([]);
+  useEffect(() => {
+    fetch('/api/settings/banks')
+      .then(res => res.json())
+      .then(data => {
+        if (data?.banks) setBanksList(data.banks);
+      })
+      .catch(err => console.error('Error fetching banks in transactions view:', err));
+  }, []);
+
   // Loan linking modal state
   const [loanModalData, setLoanModalData] = useState(null); // { txs: [...] }
   const [loansList, setLoansList] = useState([]);
@@ -252,23 +263,42 @@ export default function TransactionsView({
     }
   };
 
-  // Extract distinct accounts present in transactions
-  const presentAccounts = Array.from(new Set(transactions.map(t => t.account).filter(Boolean)));
-  const defaultAccounts = [
-    "Santander (*3012)",
-    "Santander Ahorro (*1842)",
-    "Santander Tarjeta (*0871)",
-    "Iberia Cards (*2366)",
-    "American Express Platinum",
-    "N26 (*7089)",
-    "MyInvestor"
-  ];
-  const allAccountTabs = ['all', ...Array.from(new Set([...defaultAccounts, ...presentAccounts]))];
+  // Extract bank alias options and distinct accounts present in transactions
+  const presentAccounts = Array.from(new Set(transactions.map(t => t.account_alias || t.account).filter(Boolean)));
+  
+  // Build account tab options using bank aliases if available
+  const bankOptions = banksList
+    .filter(b => Boolean(b.enabled))
+    .map(b => b.alias || b.name);
 
-  // Filter transactions with strict account equality
+  const allAccountTabs = ['all', ...Array.from(new Set([...bankOptions, ...presentAccounts]))];
+
+  // Filter transactions with alias and account matching
   const filtered = transactions.filter((t) => {
-    if (selectedAccount !== 'all' && t.account !== selectedAccount) {
-      return false;
+    if (selectedAccount !== 'all') {
+      const sel = selectedAccount.toLowerCase();
+      const tAcc = (t.account || '').toLowerCase();
+      const tAlias = (t.account_alias || '').toLowerCase();
+
+      const directMatch = tAcc === sel || tAlias === sel || t.account === selectedAccount || t.account_alias === selectedAccount;
+
+      const matchedBank = banksList.find(b => 
+        (b.alias && b.alias.toLowerCase() === sel) ||
+        b.name.toLowerCase() === sel ||
+        b.id.toLowerCase() === sel
+      );
+
+      let bankMatch = false;
+      if (matchedBank) {
+        const bId = matchedBank.id.toLowerCase();
+        const bName = matchedBank.name.toLowerCase();
+        const bAlias = (matchedBank.alias || '').toLowerCase();
+        bankMatch = tAcc.includes(bId) || tAcc.includes(bName) || (bAlias && (tAlias === bAlias || tAcc.includes(bAlias)));
+      }
+
+      if (!directMatch && !bankMatch) {
+        return false;
+      }
     }
     if (selectedCategory !== 'all' && t.category !== selectedCategory) return false;
     
@@ -797,8 +827,8 @@ export default function TransactionsView({
 
                       {/* Cuenta */}
                       <td className="py-2.5 px-3">
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border truncate max-w-[150px] ${accStyle}`} title={tx.account}>
-                          {tx.account}
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border truncate max-w-[150px] ${accStyle}`} title={tx.account_alias ? `${tx.account_alias} (${tx.account})` : tx.account}>
+                          {tx.account_alias || tx.account}
                         </span>
                       </td>
 

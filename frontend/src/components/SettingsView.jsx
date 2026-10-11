@@ -80,6 +80,9 @@ export default function SettingsView({
 
   // Supported Banks State
   const [supportedBanks, setSupportedBanks] = useState([]);
+  const [bankAliases, setBankAliases] = useState({});
+  const [savingBankAliasId, setSavingBankAliasId] = useState(null);
+  const [savedAliasBankId, setSavedAliasBankId] = useState(null);
   const [loadingBanks, setLoadingBanks] = useState(false);
 
   // General Settings State
@@ -136,7 +139,13 @@ export default function SettingsView({
     try {
       const res = await fetch('/api/settings/banks');
       const data = await res.json();
-      setSupportedBanks(data.banks || []);
+      const banks = data.banks || [];
+      setSupportedBanks(banks);
+      const aliases = {};
+      banks.forEach(b => {
+        aliases[b.id] = b.alias || '';
+      });
+      setBankAliases(aliases);
     } catch (err) {
       console.error('Error fetching banks:', err);
     } finally {
@@ -276,6 +285,27 @@ export default function SettingsView({
       console.error('Error toggling bank:', err);
       // Revert
       setSupportedBanks(prev => prev.map(b => b.id === bankId ? { ...b, enabled: currentEnabled ? 1 : 0 } : b));
+    }
+  };
+
+  const handleUpdateBankAlias = async (bankId) => {
+    setSavingBankAliasId(bankId);
+    const aliasVal = (bankAliases[bankId] || '').trim();
+    try {
+      const res = await fetch(`/api/settings/banks/${bankId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias: aliasVal })
+      });
+      const data = await res.json();
+      setSupportedBanks(prev => prev.map(b => b.id === bankId ? { ...b, alias: data.alias } : b));
+      setSavedAliasBankId(bankId);
+      setTimeout(() => setSavedAliasBankId(null), 2500);
+      if (onSettingsUpdated) onSettingsUpdated();
+    } catch (err) {
+      console.error('Error updating bank alias:', err);
+    } finally {
+      setSavingBankAliasId(null);
     }
   };
 
@@ -904,6 +934,43 @@ export default function SettingsView({
                         <span className={isEnabled ? 'text-emerald-600 dark:text-emerald-400 font-semibold' : 'text-neutral-400'}>
                           {isEnabled ? 'Parser Activo' : 'Desactivado'}
                         </span>
+                      </div>
+
+                      {/* Bank Custom Alias */}
+                      <div className="pt-2.5 border-t border-neutral-200/70 dark:border-neutral-700/60 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
+                            Alias en transacciones & filtros
+                          </label>
+                          {savedAliasBankId === bank.id && (
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Guardado
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <input
+                            type="text"
+                            placeholder={`Ej. ${bank.name} Nómina`}
+                            value={bankAliases[bank.id] ?? (bank.alias || '')}
+                            onChange={(e) => setBankAliases(prev => ({ ...prev, [bank.id]: e.target.value }))}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleUpdateBankAlias(bank.id);
+                              }
+                            }}
+                            className="flex-1 text-xs px-2.5 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-[#1e1e1e] text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateBankAlias(bank.id)}
+                            disabled={savingBankAliasId === bank.id}
+                            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
+                          >
+                            {savingBankAliasId === bank.id ? '...' : 'Guardar'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );

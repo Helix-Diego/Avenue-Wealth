@@ -25,7 +25,12 @@ import {
   Award,
   Layers,
   BarChart2,
-  HelpCircle
+  HelpCircle,
+  Search,
+  Trash2,
+  Loader2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -46,14 +51,199 @@ export default function PortfolioView({
   darkMode,
   onSyncSheets, 
   onOpenMsciModal,
+  onOpenContributionModal,
   onRefreshPortfolio,
   setActiveTab
 }) {
   const [activeSubTab, setActiveSubTab] = useState('overview'); // 'overview' | 'habits_goals' | 'simulation'
-  const [syncing, setSyncing] = useState(false);
+  const [refreshingLive, setRefreshingLive] = useState(false);
+  const [expandedFundIsins, setExpandedFundIsins] = useState({});
   const [editingAccount, setEditingAccount] = useState(null);
   const [newBalanceInput, setNewBalanceInput] = useState('');
   const [savingBalance, setSavingBalance] = useState(false);
+
+  // Add Fund Modal State
+  const [isAddFundModalOpen, setIsAddFundModalOpen] = useState(false);
+  const [newFundIsin, setNewFundIsin] = useState('');
+  const [newFundName, setNewFundName] = useState('');
+  const [newFundNav, setNewFundNav] = useState('');
+  const [lookingUpFund, setLookingUpFund] = useState(false);
+  const [savingFund, setSavingFund] = useState(false);
+  const [fundLookupNotice, setFundLookupNotice] = useState(null);
+
+  // Add Stock Modal State
+  const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
+  const [stockSearchQuery, setStockSearchQuery] = useState('');
+  const [stockSearchResults, setStockSearchResults] = useState([]);
+  const [searchingStocks, setSearchingStocks] = useState(false);
+  const [selectedStockSymbol, setSelectedStockSymbol] = useState('');
+  const [selectedStockName, setSelectedStockName] = useState('');
+  const [stockShares, setStockShares] = useState('');
+  const [stockAvgPrice, setStockAvgPrice] = useState('');
+  const [stockCurrency, setStockCurrency] = useState('USD');
+  const [currentMarketQuote, setCurrentMarketQuote] = useState(null);
+  const [savingStock, setSavingStock] = useState(false);
+
+  // Live stock debounced search effect
+  useEffect(() => {
+    if (!stockSearchQuery.trim()) {
+      setStockSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearchingStocks(true);
+      try {
+        const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(stockSearchQuery.trim())}`);
+        const data = await res.json();
+        setStockSearchResults(data.results || []);
+      } catch (err) {
+        console.error('Error searching stocks with Finnhub:', err);
+      } finally {
+        setSearchingStocks(false);
+      }
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [stockSearchQuery]);
+
+  const handleSelectStock = async (item) => {
+    setSelectedStockSymbol(item.symbol);
+    setSelectedStockName(item.description);
+    setStockSearchQuery('');
+    setStockSearchResults([]);
+    try {
+      const res = await fetch(`/api/stocks/quote?symbol=${encodeURIComponent(item.symbol)}`);
+      const q = await res.json();
+      setCurrentMarketQuote(q);
+      if (q.price && !stockAvgPrice) {
+        setStockAvgPrice(q.price.toString());
+      }
+    } catch (err) {
+      console.error('Error fetching stock quote:', err);
+    }
+  };
+
+  const handleSaveStock = async (e) => {
+    e?.preventDefault();
+    if (!selectedStockSymbol) return;
+    setSavingStock(true);
+    try {
+      await fetch('/api/stocks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: selectedStockSymbol,
+          name: selectedStockName,
+          shares: parseFloat(stockShares) || 0,
+          avg_price: parseFloat(stockAvgPrice) || 0,
+          currency: stockCurrency
+        })
+      });
+      setIsAddStockModalOpen(false);
+      setSelectedStockSymbol('');
+      setSelectedStockName('');
+      setStockShares('');
+      setStockAvgPrice('');
+      setCurrentMarketQuote(null);
+      if (onRefreshPortfolio) await onRefreshPortfolio();
+    } catch (err) {
+      console.error('Error saving stock holding:', err);
+    } finally {
+      setSavingStock(false);
+    }
+  };
+
+  const handleDeleteStock = async (symbol) => {
+    if (!window.confirm(`¿Seguro que deseas eliminar la posición en ${symbol}?`)) return;
+    try {
+      await fetch(`/api/stocks/${encodeURIComponent(symbol)}`, { method: 'DELETE' });
+      if (onRefreshPortfolio) await onRefreshPortfolio();
+    } catch (err) {
+      console.error('Error deleting stock holding:', err);
+    }
+  };
+
+  const handleLookupFund = async () => {
+    if (!newFundIsin.trim()) return;
+    setLookingUpFund(true);
+    setFundLookupNotice(null);
+    try {
+      const res = await fetch(`/api/portfolio/funds/lookup?isin=${encodeURIComponent(newFundIsin.trim())}`);
+      const data = await res.json();
+      if (data) {
+        if (data.name) setNewFundName(data.name);
+        if (data.nav) setNewFundNav(data.nav.toString());
+        setFundLookupNotice(`Cotización obtenida en tiempo real (NAV: ${data.nav || 0} €)`);
+      }
+    } catch (err) {
+      console.error('Error looking up fund:', err);
+      setFundLookupNotice('No se localizó automáticamente. Rellena el nombre y NAV manualmente.');
+    } finally {
+      setLookingUpFund(false);
+    }
+  };
+
+  const handleSaveFund = async (e) => {
+    e?.preventDefault();
+    if (!newFundIsin.trim()) return;
+    setSavingFund(true);
+    try {
+      await fetch('/api/portfolio/funds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isin: newFundIsin.trim().toUpperCase(),
+          name: newFundName.trim() || `Fondo ${newFundIsin.trim().toUpperCase()}`,
+          latest_nav: parseFloat(newFundNav) || 0.0,
+          currency: 'EUR'
+        })
+      });
+      setIsAddFundModalOpen(false);
+      setNewFundIsin('');
+      setNewFundName('');
+      setNewFundNav('');
+      setFundLookupNotice(null);
+      if (onRefreshPortfolio) await onRefreshPortfolio();
+    } catch (err) {
+      console.error('Error saving fund:', err);
+    } finally {
+      setSavingFund(false);
+    }
+  };
+
+  const handleDeleteFund = async (isin) => {
+    if (!window.confirm(`¿Seguro que deseas eliminar el fondo ${isin} y su historial de aportaciones?`)) return;
+    try {
+      await fetch(`/api/portfolio/funds/${encodeURIComponent(isin)}`, { method: 'DELETE' });
+      if (onRefreshPortfolio) await onRefreshPortfolio();
+    } catch (err) {
+      console.error('Error deleting fund:', err);
+    }
+  };
+
+  const handleDeleteFundContribution = async (contribId) => {
+    if (!window.confirm('¿Seguro que deseas eliminar esta aportación?')) return;
+    try {
+      await fetch(`/api/portfolio/funds/contributions/${contribId}`, { method: 'DELETE' });
+      if (onRefreshPortfolio) await onRefreshPortfolio();
+    } catch (err) {
+      console.error('Error deleting contribution:', err);
+    }
+  };
+
+  const handleRefreshLivePrices = async () => {
+    setRefreshingLive(true);
+    try {
+      await Promise.all([
+        fetch('/api/stocks/refresh', { method: 'POST' }),
+        fetch('/api/portfolio/funds/refresh-all', { method: 'POST' })
+      ]);
+      if (onRefreshPortfolio) await onRefreshPortfolio();
+    } catch (err) {
+      console.error('Error refreshing live quotes:', err);
+    } finally {
+      setRefreshingLive(false);
+    }
+  };
 
   // -------------------------------------------------------------
   // MSCI Compound Interest Simulator State
@@ -269,21 +459,35 @@ export default function PortfolioView({
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={onOpenMsciModal}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white transition-colors shadow-xs cursor-pointer"
+            onClick={() => onOpenContributionModal ? onOpenContributionModal() : (onOpenMsciModal && onOpenMsciModal())}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white transition-colors shadow-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span>Aportar a MSCI World</span>
+            <span>Nueva Aportación</span>
           </button>
           <button
-            disabled={syncing}
-            onClick={handleSync}
-            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700"
+            onClick={() => setIsAddFundModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-800 transition-colors cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-indigo-600' : ''}`} />
-            <span>{syncing ? 'Sincronizando...' : 'Sincronizar Sheets'}</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>Registrar Fondo (ISIN)</span>
+          </button>
+          <button
+            onClick={() => setIsAddStockModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Añadir Acción (Finnhub)</span>
+          </button>
+          <button
+            disabled={refreshingLive}
+            onClick={handleRefreshLivePrices}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-800 dark:text-neutral-200 transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${refreshingLive ? 'animate-spin text-indigo-600' : ''}`} />
+            <span>{refreshingLive ? 'Actualizando...' : 'Actualizar Cotizaciones'}</span>
           </button>
         </div>
       </div>
@@ -346,24 +550,26 @@ export default function PortfolioView({
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full md:w-auto">
-            {/* MSCI Pill */}
+            {/* Funds Pill */}
             <div className="p-3 rounded-lg bg-white/10 backdrop-blur-xs text-left">
-              <span className="text-[10px] text-neutral-300 block">Fondo MSCI World</span>
-              <span className="text-base font-bold font-mono">{fund.total_value_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €</span>
+              <span className="text-[10px] text-neutral-300 block">Fondos de Inversión</span>
+              <span className="text-base font-bold font-mono">
+                {((portfolio.funds_summary?.total_value_eur ?? fund?.total_value_eur) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+              </span>
               <span className="text-[11px] block mt-0.5 font-semibold text-emerald-400">
-                +{fund.pnl_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € (↑ {fund.pnl_pct}%)
+                +{((portfolio.funds_summary?.pnl_eur ?? fund?.pnl_eur) || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} € (↑ {portfolio.funds_summary?.pnl_pct ?? fund?.pnl_pct ?? 0}%)
               </span>
             </div>
 
             {/* Stocks Pill */}
             <div className="p-3 rounded-lg bg-white/10 backdrop-blur-xs text-left">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-neutral-300 block">Acciones USA</span>
+                <span className="text-[10px] text-neutral-300 block">Cartera Acciones</span>
                 <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-500/30 text-indigo-300 font-mono">Finnhub</span>
               </div>
-              <span className="text-base font-bold font-mono">{stocks.total_value_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €</span>
-              <span className={`text-[11px] block mt-0.5 font-semibold ${stocks.pnl_eur >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {stocks.pnl_eur >= 0 ? `+${stocks.pnl_pct}%` : `${stocks.pnl_pct}%`}
+              <span className="text-base font-bold font-mono">{(stocks?.total_value_eur || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 })} €</span>
+              <span className={`text-[11px] block mt-0.5 font-semibold ${(stocks?.pnl_eur || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {(stocks?.pnl_eur || 0) >= 0 ? `+${stocks?.pnl_pct || 0}%` : `${stocks?.pnl_pct || 0}%`}
               </span>
             </div>
 
@@ -500,207 +706,350 @@ export default function PortfolioView({
             </div>
           </div>
 
-          {/* Section 2: MSCI World Index Fund (IE00BYX5P602) */}
-          <div className="p-5 rounded-xl bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+          {/* Section 2: Fondos de Inversión (Generalista por ISIN / Ref) */}
+          <div className="space-y-4 pt-2">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <div className="flex items-center space-x-2">
-                  <span className="text-lg">🌍</span>
+                  <span className="text-xl">🌍</span>
                   <h2 className="text-base font-bold text-neutral-900 dark:text-white">
-                    Fondo de Inversión MSCI World (IE00BYX5P602)
+                    Fondos de Inversión
                   </h2>
                   <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-violet-50 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300 border border-violet-200 dark:border-violet-800">
-                    Fidelity MSCI World Index EUR P Acc
+                    {(portfolio.funds || []).length} Registrados
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Posición consolidada sincronizada con extracto MyInvestor / Inversis
+                  Registra cualquier fondo de inversión por su código ISIN para cotización y aportaciones en tiempo real
                 </p>
               </div>
 
-              <button
-                onClick={onOpenMsciModal}
-                className="flex items-center space-x-1 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 cursor-pointer transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Registrar Nueva Aportación</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsAddFundModalOpen(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-800 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Registrar Fondo (ISIN)</span>
+                </button>
+                <button
+                  onClick={() => onOpenContributionModal ? onOpenContributionModal() : (onOpenMsciModal && onOpenMsciModal())}
+                  className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white shadow-xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Nueva Aportación</span>
+                </button>
+              </div>
             </div>
 
-            {/* Metrics cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
-                <span className="text-[11px] text-neutral-500 block">Valor de Mercado</span>
-                <div className="text-lg font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
-                  {fund.total_value_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+            {/* Funds Cards / List */}
+            {(!portfolio.funds || portfolio.funds.length === 0) ? (
+              <div className="p-8 rounded-xl bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] text-center space-y-3">
+                <div className="w-12 h-12 rounded-xl bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-400 flex items-center justify-center mx-auto">
+                  <TrendingUp className="w-6 h-6" />
                 </div>
-                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 mt-0.5 block">
-                  +{fund.pnl_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € (↑ {fund.pnl_pct}%)
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                  No tienes fondos de inversión registrados aún
+                </h3>
+                <p className="text-xs text-neutral-500 max-w-md mx-auto">
+                  Añade tus fondos indexados o de gestión activa indicando su código ISIN para tener su cotización y valor liquidativo en tiempo real.
+                </p>
+                <button
+                  onClick={() => setIsAddFundModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Registrar mi primer fondo</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {portfolio.funds.map((f) => {
+                  const isExpanded = Boolean(expandedFundIsins[f.isin]);
+                  const costPrice = f.total_shares > 0 ? (f.invested_eur / f.total_shares) : (f.latest_nav || 0);
+
+                  return (
+                    <div key={f.isin} className="p-5 rounded-xl bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] shadow-xs space-y-4">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+                        <div>
+                          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                            <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                              {f.name}
+                            </h3>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700">
+                              ISIN: {f.isin}
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-neutral-400 font-mono">
+                            Última actualización: {f.last_updated ? f.last_updated.slice(0, 16).replace('T', ' ') : 'Hoy'}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => onOpenContributionModal ? onOpenContributionModal(f.isin) : (onOpenMsciModal && onOpenMsciModal())}
+                            className="flex items-center space-x-1 px-2.5 py-1 text-xs font-semibold text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>+ Aportar</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteFund(f.isin)}
+                            className="p-1.5 text-neutral-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer"
+                            title="Eliminar fondo"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Metrics cards */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
+                          <span className="text-[11px] text-neutral-500 block">Valor de Mercado</span>
+                          <div className="text-base font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
+                            {f.total_value_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                          </div>
+                          <span className={`text-[10px] font-semibold mt-0.5 block ${f.pnl_eur >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                            {f.pnl_eur >= 0 ? `+${f.pnl_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € (↑ ${f.pnl_pct}%)` : `${f.pnl_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} € (↓ ${f.pnl_pct}%)`}
+                          </span>
+                        </div>
+
+                        <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
+                          <span className="text-[11px] text-neutral-500 block">Participaciones</span>
+                          <div className="text-base font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
+                            {f.total_shares.toLocaleString('es-ES', { minimumFractionDigits: 4 })}
+                          </div>
+                          <span className="text-[10px] text-neutral-400 mt-0.5 block">Títulos en posesión</span>
+                        </div>
+
+                        <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
+                          <span className="text-[11px] text-neutral-500 block">Coste Medio</span>
+                          <div className="text-base font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
+                            {costPrice.toFixed(4)} €
+                          </div>
+                          <span className="text-[10px] text-neutral-400 mt-0.5 block">Precio medio compra</span>
+                        </div>
+
+                        <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
+                          <span className="text-[11px] text-neutral-500 block">Invertido Acumulado</span>
+                          <div className="text-base font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
+                            {f.invested_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                          </div>
+                          <span className="text-[10px] text-neutral-400 mt-0.5 block">Capital aportado</span>
+                        </div>
+
+                        <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
+                          <span className="text-[11px] text-neutral-500 block">NAV Actual</span>
+                          <div className="text-base font-bold font-mono text-violet-600 dark:text-violet-400 mt-0.5">
+                            {f.latest_nav.toFixed(4)} €
+                          </div>
+                          <span className="text-[10px] text-emerald-600 mt-0.5 block font-medium">Cotización en vivo</span>
+                        </div>
+                      </div>
+
+                      {/* Contributions History Accordion */}
+                      {f.contributions && f.contributions.length > 0 && (
+                        <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedFundIsins(prev => ({ ...prev, [f.isin]: !prev[f.isin] }))}
+                            className="flex items-center justify-between w-full text-xs font-semibold text-neutral-700 dark:text-neutral-300 py-1 hover:text-indigo-600 transition-colors cursor-pointer"
+                          >
+                            <span className="flex items-center gap-1.5">
+                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                              <span>Historial de Suscripciones y Aportaciones ({f.contributions.length} registros)</span>
+                            </span>
+                            <span className="text-[11px] text-neutral-400 font-normal">
+                              {isExpanded ? 'Ocultar' : 'Mostrar detalle'}
+                            </span>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="overflow-x-auto rounded-lg border border-neutral-200/70 dark:border-neutral-800 mt-2">
+                              <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                  <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-500 font-medium bg-neutral-50/60 dark:bg-neutral-800/40">
+                                    <th className="py-2 px-3">Fecha</th>
+                                    <th className="py-2 px-3">Concepto / Detalle</th>
+                                    <th className="py-2 px-3">Cuenta Origen</th>
+                                    <th className="py-2 px-3 text-right">Importe Invertido</th>
+                                    <th className="py-2 px-3 text-right">Participaciones</th>
+                                    <th className="py-2 px-3 text-right">Precio NAV</th>
+                                    <th className="py-2 px-3 text-center">Acción</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-mono">
+                                  {f.contributions.map((c) => (
+                                    <tr key={c.id} className="hover:bg-neutral-50/70 dark:hover:bg-[#2a2a2a]/50">
+                                      <td className="py-2 px-3 font-sans text-neutral-600 dark:text-neutral-400">{c.date}</td>
+                                      <td className="py-2 px-3 font-sans font-medium text-neutral-800 dark:text-neutral-200">{c.notes}</td>
+                                      <td className="py-2 px-3 font-sans text-neutral-500 text-[11px]">{c.funding_account || '-'}</td>
+                                      <td className="py-2 px-3 text-right font-bold text-neutral-900 dark:text-white">
+                                        {c.invested_amount.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                                      </td>
+                                      <td className="py-2 px-3 text-right text-violet-600 dark:text-violet-400">
+                                        {c.shares.toLocaleString('es-ES', { minimumFractionDigits: 4 })}
+                                      </td>
+                                      <td className="py-2 px-3 text-right text-neutral-500 text-[11px]">
+                                        {c.nav_price ? `${c.nav_price.toFixed(4)} €` : '-'}
+                                      </td>
+                                      <td className="py-2 px-3 text-center">
+                                        <button
+                                          onClick={() => handleDeleteFundContribution(c.id)}
+                                          className="text-neutral-400 hover:text-rose-600 transition-colors p-1"
+                                          title="Eliminar aportación"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Section 3: Cartera de Acciones con Finnhub API en directo */}
+          <div className="space-y-3 pt-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center space-x-2">
+                <h2 className="text-base font-bold text-neutral-900 dark:text-white">
+                  Cartera de Acciones
+                </h2>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                  <Zap className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" /> Finnhub en directo
+                </span>
+                <span className="text-xs text-neutral-400 font-mono ml-2">
+                  1 EUR = {stocks.eur_usd_rate || 1.137} USD
                 </span>
               </div>
 
-              <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
-                <span className="text-[11px] text-neutral-500 block">Participaciones</span>
-                <div className="text-lg font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
-                  {fund.total_shares.toLocaleString('es-ES', { minimumFractionDigits: 2 })}
-                </div>
-                <span className="text-[10px] text-neutral-400 mt-0.5 block">Títulos acumulados</span>
-              </div>
-
-              <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
-                <span className="text-[11px] text-neutral-500 block">Coste Medio</span>
-                <div className="text-lg font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
-                  10,02 €
-                </div>
-                <span className="text-[10px] text-neutral-400 mt-0.5 block">Precio medio compra</span>
-              </div>
-
-              <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
-                <span className="text-[11px] text-neutral-500 block">Invertido Acumulado</span>
-                <div className="text-lg font-bold font-mono text-neutral-900 dark:text-white mt-0.5">
-                  {fund.invested_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                </div>
-                <span className="text-[10px] text-neutral-400 mt-0.5 block">Capital aportado</span>
-              </div>
-
-              <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-[#2a2a2a] border border-neutral-200/60 dark:border-neutral-700/60">
-                <span className="text-[11px] text-neutral-500 block">Valor Liquidativo (NAV)</span>
-                <div className="text-lg font-bold font-mono text-violet-600 dark:text-violet-400 mt-0.5">
-                  {fund.latest_nav.toFixed(4)} €
-                </div>
-                <span className="text-[10px] text-emerald-600 mt-0.5 block font-medium">Cotización actual</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsAddStockModalOpen(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Añadir Acción</span>
+                </button>
+                <button
+                  disabled={refreshingLive}
+                  onClick={handleRefreshLivePrices}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300 border border-neutral-200 dark:border-neutral-700 transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshingLive ? 'animate-spin text-indigo-600' : ''}`} />
+                  <span>Refrescar Precios</span>
+                </button>
               </div>
             </div>
 
-            {/* Contributions Log from MyInvestor */}
-            {fund.contributions && fund.contributions.length > 0 && (
-              <div className="pt-2">
-                <div className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-2 flex items-center justify-between">
-                  <span>Historial de Suscripciones y Aportaciones (MyInvestor)</span>
-                  <span className="text-[11px] text-neutral-400 font-normal">
-                    {fund.contributions.length} registros
-                  </span>
+            {(!stocks.items || stocks.items.length === 0) ? (
+              <div className="p-8 rounded-xl bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] text-center space-y-3">
+                <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto">
+                  <Zap className="w-6 h-6" />
                 </div>
-                <div className="overflow-x-auto rounded-lg border border-neutral-200/70 dark:border-neutral-800">
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                  No tienes acciones en cartera todavía
+                </h3>
+                <p className="text-xs text-neutral-500 max-w-md mx-auto">
+                  Busca cualquier valor global en tiempo real a través de Finnhub (ej. Apple, Microsoft, Tesla, Santander, etc.) y añade tus acciones y precio medio de compra.
+                </p>
+                <button
+                  onClick={() => setIsAddStockModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white transition-colors cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Buscar y añadir acción</span>
+                </button>
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] rounded-xl shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-neutral-200 dark:border-neutral-800 text-neutral-500 font-medium bg-neutral-50/60 dark:bg-neutral-800/40">
-                        <th className="py-2 px-3">Fecha</th>
-                        <th className="py-2 px-3">Concepto / Detalle</th>
-                        <th className="py-2 px-3 text-right">Importe Invertido</th>
-                        <th className="py-2 px-3 text-right">Participaciones</th>
-                        <th className="py-2 px-3 text-right">Precio NAV</th>
+                      <tr className="border-b border-[#ececeb] dark:border-[#2f2f2f] bg-[#fbfbfa] dark:bg-[#202020] text-[#787774] dark:text-[#909090] font-medium">
+                        <th className="py-2.5 px-3">Símbolo & Empresa</th>
+                        <th className="py-2.5 px-3 text-right">Acciones</th>
+                        <th className="py-2.5 px-3 text-right">Precio Medio</th>
+                        <th className="py-2.5 px-3 text-right">Cotización Finnhub</th>
+                        <th className="py-2.5 px-3 text-right">24h</th>
+                        <th className="py-2.5 px-3 text-right">Valor Total ($)</th>
+                        <th className="py-2.5 px-3 text-right">Valor Total (€)</th>
+                        <th className="py-2.5 px-3 text-right">P&L No Realizado</th>
+                        <th className="py-2.5 px-3 text-center">Acción</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-neutral-100 dark:divide-neutral-800 font-mono">
-                      {fund.contributions.map((c) => (
-                        <tr key={c.id} className="hover:bg-neutral-50/70 dark:hover:bg-[#2a2a2a]/50">
-                          <td className="py-2 px-3 font-sans text-neutral-600 dark:text-neutral-400">{c.date}</td>
-                          <td className="py-2 px-3 font-sans font-medium text-neutral-800 dark:text-neutral-200">{c.notes}</td>
-                          <td className="py-2 px-3 text-right font-bold text-neutral-900 dark:text-white">
-                            {c.invested_amount.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                          </td>
-                          <td className="py-2 px-3 text-right text-violet-600 dark:text-violet-400">
-                            {c.shares.toLocaleString('es-ES', { minimumFractionDigits: 4 })}
-                          </td>
-                          <td className="py-2 px-3 text-right text-neutral-500 text-[11px]">
-                            {c.nav_price ? `${c.nav_price.toFixed(4)} €` : '-'}
-                          </td>
-                        </tr>
-                      ))}
+                    <tbody className="divide-y divide-[#f2f2f0] dark:divide-[#2c2c2c]">
+                      {stocks.items.map((s) => {
+                        const isPositive = s.pnl_usd >= 0;
+                        const isUp24h = s.change_24h >= 0;
+
+                        return (
+                          <tr key={s.symbol} className="hover:bg-neutral-50/70 dark:hover:bg-[#2a2a2a]/50">
+                            <td className="py-2.5 px-3">
+                              <div className="font-bold font-mono text-neutral-900 dark:text-neutral-100">
+                                {s.symbol}
+                              </div>
+                              {s.name && s.name !== s.symbol && (
+                                <div className="text-[10px] text-neutral-400 font-sans truncate max-w-[180px]">
+                                  {s.name}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-neutral-600 dark:text-neutral-400">
+                              {s.shares}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-neutral-600 dark:text-neutral-400">
+                              ${s.avg_price.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-neutral-900 dark:text-white">
+                              ${s.current_price.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono text-[11px]">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded ${
+                                isUp24h ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' : 'text-rose-600 bg-rose-50 dark:bg-rose-950/40'
+                              }`}>
+                                {isUp24h ? `+${s.change_24h}%` : `${s.change_24h}%`}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-medium text-neutral-800 dark:text-neutral-200">
+                              ${s.value_usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-semibold text-neutral-900 dark:text-white">
+                              {s.value_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
+                              <span className={`font-semibold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                {isPositive ? `+${s.pnl_eur.toFixed(2)} €` : `${s.pnl_eur.toFixed(2)} €`}
+                                <span className="text-[10px] ml-1 font-normal">({s.pnl_pct > 0 ? `+${s.pnl_pct}%` : `${s.pnl_pct}%`})</span>
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <button
+                                onClick={() => handleDeleteStock(s.symbol)}
+                                className="text-neutral-400 hover:text-rose-600 transition-colors p-1"
+                                title="Eliminar posición"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Section 3: Stocks from Google Sheets with Finnhub Live Quotes */}
-          <div className="space-y-3 pt-2">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-              <div className="flex items-center space-x-2">
-                <h2 className="text-base font-bold text-[#37352f] dark:text-white">
-                  Cartera de Acciones USA
-                </h2>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                  <Zap className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" /> Finnhub en directo
-                </span>
-                <a
-                  href="https://docs.google.com/spreadsheets/d/1t5XvfCTcJuwpyTsuJyqj_BBE88u5OOobwsUe9Mp7BCY/edit?usp=sharing"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center space-x-1 text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-medium ml-1 transition-colors"
-                >
-                  <span>Google Sheets</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-
-              <div className="text-xs text-neutral-500 font-mono">
-                Tipo de cambio: 1 EUR = {stocks.eur_usd_rate} USD
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] rounded-lg shadow-xs overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-[#ececeb] dark:border-[#2f2f2f] bg-[#fbfbfa] dark:bg-[#202020] text-[#787774] dark:text-[#909090] font-medium">
-                      <th className="py-2.5 px-3">Símbolo</th>
-                      <th className="py-2.5 px-3 text-right">Acciones</th>
-                      <th className="py-2.5 px-3 text-right">Precio Medio</th>
-                      <th className="py-2.5 px-3 text-right">Cotización Finnhub</th>
-                      <th className="py-2.5 px-3 text-right">24h</th>
-                      <th className="py-2.5 px-3 text-right">Valor Total ($)</th>
-                      <th className="py-2.5 px-3 text-right">Valor Total (€)</th>
-                      <th className="py-2.5 px-3 text-right">P&L No Realizado</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#f2f2f0] dark:divide-[#2c2c2c]">
-                    {stocks.items.map((s) => {
-                      const isPositive = s.pnl_usd >= 0;
-                      const isUp24h = s.change_24h >= 0;
-
-                      return (
-                        <tr key={s.symbol} className="hover:bg-neutral-50/70 dark:hover:bg-[#2a2a2a]/50">
-                          <td className="py-2.5 px-3 font-bold font-mono text-neutral-900 dark:text-neutral-100">
-                            {s.symbol}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono text-neutral-600 dark:text-neutral-400">
-                            {s.shares}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono text-neutral-600 dark:text-neutral-400">
-                            ${s.avg_price.toFixed(2)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-semibold text-neutral-900 dark:text-white">
-                            ${s.current_price.toFixed(2)}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono text-[11px]">
-                            <span className={`inline-flex items-center px-1 rounded ${
-                              isUp24h ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' : 'text-rose-600 bg-rose-50 dark:bg-rose-950/40'
-                            }`}>
-                              {isUp24h ? `+${s.change_24h}%` : `${s.change_24h}%`}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-medium text-neutral-800 dark:text-neutral-200">
-                            ${s.value_usd.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-semibold text-neutral-900 dark:text-white">
-                            {s.value_eur.toLocaleString('es-ES', { minimumFractionDigits: 2 })} €
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono whitespace-nowrap">
-                            <span className={`font-semibold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                              {isPositive ? `+${s.pnl_eur.toFixed(2)} €` : `${s.pnl_eur.toFixed(2)} €`}
-                              <span className="text-[10px] ml-1 font-normal">({s.pnl_pct > 0 ? `+${s.pnl_pct}%` : `${s.pnl_pct}%`})</span>
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -1366,6 +1715,297 @@ export default function PortfolioView({
           </div>
         </div>
       )}
+
+      {/* Modal: Registrar Fondo de Inversión por ISIN */}
+      {isAddFundModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-[#282828] border border-neutral-200 dark:border-neutral-700 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center space-x-2">
+                <span className="text-lg">🌍</span>
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                    Registrar Fondo de Inversión
+                  </h3>
+                  <p className="text-[11px] text-neutral-500">
+                    Búsqueda de cotización en tiempo real por ISIN / Referencia
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsAddFundModalOpen(false);
+                  setFundLookupNotice(null);
+                }}
+                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveFund} className="p-4 space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  Código ISIN / Referencia del Fondo
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={newFundIsin}
+                    onChange={(e) => setNewFundIsin(e.target.value.toUpperCase())}
+                    placeholder="ej. IE00BYX5P602"
+                    className="flex-1 px-3 py-2 text-xs font-mono uppercase rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-violet-500"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    disabled={lookingUpFund || !newFundIsin.trim()}
+                    onClick={handleLookupFund}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-violet-200 dark:border-violet-800 transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {lookingUpFund ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Search className="w-3.5 h-3.5" />
+                    )}
+                    <span>Consultar</span>
+                  </button>
+                </div>
+                {fundLookupNotice && (
+                  <p className="text-[11px] text-violet-600 dark:text-violet-400 mt-1.5 font-medium flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    <span>{fundLookupNotice}</span>
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  Nombre del Fondo
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newFundName}
+                  onChange={(e) => setNewFundName(e.target.value)}
+                  placeholder="ej. Fidelity MSCI World Index Fund"
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  Valor Liquidativo / NAV Inicial (€)
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  required
+                  value={newFundNav}
+                  onChange={(e) => setNewFundNav(e.target.value)}
+                  placeholder="ej. 12.1018"
+                  className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-violet-500"
+                />
+                <p className="text-[11px] text-neutral-400 mt-1">
+                  Se actualizará automáticamente con el valor liquidativo más reciente del mercado.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setIsAddFundModalOpen(false)}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingFund || !newFundIsin.trim()}
+                  className="px-3.5 py-1.5 rounded-md text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {savingFund ? 'Guardando...' : 'Registrar Fondo'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Añadir Acción con Búsqueda en Directo Finnhub */}
+      {isAddStockModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-[#282828] border border-neutral-200 dark:border-neutral-700 shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between p-4 border-b border-neutral-100 dark:border-neutral-800">
+              <div className="flex items-center space-x-2">
+                <span className="text-lg">📈</span>
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                    Añadir Posición en Acciones
+                  </h3>
+                  <p className="text-[11px] text-neutral-500 flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-indigo-500" /> Búsqueda en tiempo real mediante Finnhub
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsAddStockModalOpen(false);
+                  setStockSearchQuery('');
+                  setStockSearchResults([]);
+                }}
+                className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 dark:hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStock} className="p-4 space-y-4">
+              {/* Finnhub Live Search Input */}
+              <div className="relative">
+                <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  Buscar Valor / Empresa (Finnhub)
+                </label>
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-neutral-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={stockSearchQuery}
+                    onChange={(e) => setStockSearchQuery(e.target.value)}
+                    placeholder="ej. Apple, AAPL, Microsoft, MSFT, SAN.MC..."
+                    className="w-full pl-9 pr-8 py-2 text-xs rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-indigo-500"
+                    autoFocus={!selectedStockSymbol}
+                  />
+                  {searchingStocks && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-400 absolute right-3 top-2.5" />
+                  )}
+                </div>
+
+                {/* Dropdown search results */}
+                {stockSearchResults.length > 0 && (
+                  <div className="absolute z-20 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg bg-white dark:bg-[#1f1f1f] border border-neutral-200 dark:border-neutral-700 shadow-lg divide-y divide-neutral-100 dark:divide-neutral-800">
+                    {stockSearchResults.map((item) => (
+                      <button
+                        type="button"
+                        key={item.symbol}
+                        onClick={() => handleSelectStock(item)}
+                        className="w-full text-left px-3 py-2 hover:bg-neutral-50 dark:hover:bg-[#2a2a2a] flex items-center justify-between text-xs transition-colors cursor-pointer"
+                      >
+                        <div className="truncate pr-2">
+                          <span className="font-mono font-bold text-neutral-900 dark:text-white">{item.symbol}</span>
+                          <span className="text-neutral-500 dark:text-neutral-400 ml-2 text-[11px] truncate">{item.description}</span>
+                        </div>
+                        <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-500">
+                          {item.type || 'Stock'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Selected Stock Banner */}
+              {selectedStockSymbol ? (
+                <div className="p-3 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/70">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-mono font-bold text-sm text-indigo-900 dark:text-indigo-200">
+                        {selectedStockSymbol}
+                      </span>
+                      <p className="text-[11px] text-indigo-700 dark:text-indigo-300 truncate max-w-[240px]">
+                        {selectedStockName || selectedStockSymbol}
+                      </p>
+                    </div>
+                    {currentMarketQuote && (
+                      <div className="text-right">
+                        <span className="font-mono font-bold text-xs text-indigo-900 dark:text-indigo-200">
+                          ${currentMarketQuote.price?.toFixed(2)}
+                        </span>
+                        <span className={`block text-[10px] font-mono ${
+                          (currentMarketQuote.change_24h || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                        }`}>
+                          {(currentMarketQuote.change_24h || 0) >= 0 ? `+${currentMarketQuote.change_24h}%` : `${currentMarketQuote.change_24h}%`}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/40 text-neutral-400 text-center text-xs">
+                  Busca y selecciona un activo para cargar su cotización
+                </div>
+              )}
+
+              {/* Shares & Avg Buy Price Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    Número de Acciones
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    required
+                    value={stockShares}
+                    onChange={(e) => setStockShares(e.target.value)}
+                    placeholder="ej. 10"
+                    className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                    Precio Medio Compra ($)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={stockAvgPrice}
+                    onChange={(e) => setStockAvgPrice(e.target.value)}
+                    placeholder="ej. 150.00"
+                    className="w-full px-3 py-2 text-xs font-mono rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Currency Selector */}
+              <div>
+                <label className="block text-xs font-medium text-neutral-700 dark:text-neutral-300 mb-1">
+                  Divisa de Cotización
+                </label>
+                <select
+                  value={stockCurrency}
+                  onChange={(e) => setStockCurrency(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white focus:outline-indigo-500"
+                >
+                  <option value="USD">USD ($ - Dólar Estadounidense)</option>
+                  <option value="EUR">EUR (€ - Euro)</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setIsAddStockModalOpen(false)}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingStock || !selectedStockSymbol || !stockShares}
+                  className="px-3.5 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs cursor-pointer disabled:opacity-50"
+                >
+                  {savingStock ? 'Guardando...' : 'Guardar Posición'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

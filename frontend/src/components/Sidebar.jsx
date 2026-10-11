@@ -129,26 +129,17 @@ export default function Sidebar({
         {/* Direct Links / Context */}
         <div className="px-2 py-2">
           <div className="px-2.5 py-1 text-[10px] font-semibold tracking-wider uppercase text-[#9b9a97] dark:text-[#6e6e6e]">
-            Activos Conectados
+            Inversiones & Activos
           </div>
-          <a
-            href="https://docs.google.com/spreadsheets/d/1t5XvfCTcJuwpyTsuJyqj_BBE88u5OOobwsUe9Mp7BCY/edit?usp=sharing"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-[#5f5e5b] dark:text-[#b4b4b4] hover:bg-[#efeee9] dark:hover:bg-[#262626] transition-colors"
-          >
-            <span className="flex items-center space-x-2 truncate">
-              <span className="text-emerald-600 font-bold">📊</span>
-              <span className="truncate">Google Sheet Acciones</span>
-            </span>
-            <ExternalLink className="w-3 h-3 opacity-60" />
-          </a>
           <div 
             onClick={() => setActiveTab('portfolio')}
-            className="px-2.5 py-1.5 text-xs text-[#787774] dark:text-[#888888] flex items-center justify-between cursor-pointer hover:bg-[#efeee9] dark:hover:bg-[#262626] rounded-md transition-colors"
+            className="flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs text-[#5f5e5b] dark:text-[#b4b4b4] hover:bg-[#efeee9] dark:hover:bg-[#262626] transition-colors cursor-pointer"
           >
-            <span className="truncate">MSCI World: 1.436,51 part.</span>
-            <span className="text-[10px] font-mono font-bold text-emerald-600">+20,8%</span>
+            <span className="flex items-center space-x-2 truncate">
+              <span className="text-indigo-600 font-bold">📈</span>
+              <span className="truncate">Cartera & Fondos</span>
+            </span>
+            <span className="text-[10px] font-mono font-bold text-emerald-600">En Vivo</span>
           </div>
         </div>
       </div>

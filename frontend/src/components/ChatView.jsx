@@ -21,8 +21,8 @@ import MarkdownRenderer from './MarkdownRenderer';
 
 export const INITIAL_CHAT_MESSAGE = {
   role: 'assistant',
-  content: `# ¡Hola Diego! 👋 Soy tu Asistente de Inteligencia Financiera Personal
-Tengo acceso en tiempo real a tus cuentas bancarias (**Santander, Santander Ahorro, Iberia Cards, N26, Amex**), cartera de inversión en **Fidelity MSCI World (IE00BYX5P602)** y acciones en **Google Sheets** (cotizaciones en directo vía Finnhub).
+  content: `# ¡Hola! 👋 Soy tu Asistente de Inteligencia Financiera Personal
+Tengo acceso en tiempo real a tus cuentas bancarias conectadas, fondos de inversión registrados y cartera de acciones con cotizaciones en vivo vía Finnhub.
 
 ### 🔍 ¿En qué te puedo ayudar hoy?
 - 📊 **Auditoría Semestral**: Diagnóstico de ingresos, gastos y evolución de tu tasa de ahorro (Abril - Septiembre 2026).
