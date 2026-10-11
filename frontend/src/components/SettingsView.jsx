@@ -25,7 +25,11 @@ import {
   X,
   Shield,
   HelpCircle,
-  ArrowRight
+  ArrowRight,
+  Database,
+  Download,
+  Upload,
+  HardDrive
 } from 'lucide-react';
 
 const PRESET_COLORS = [
@@ -100,13 +104,70 @@ export default function SettingsView({
   const [resettingData, setResettingData] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState(null);
 
+  // Backup & Storage State
+  const [backupInfo, setBackupInfo] = useState(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreFeedback, setRestoreFeedback] = useState(null);
+
   // Load data on mount
   useEffect(() => {
     fetchAISettings();
     fetchCategories();
     fetchBanks();
     fetchGeneralSettings();
+    fetchBackupInfo();
   }, []);
+
+  const fetchBackupInfo = async () => {
+    try {
+      const res = await fetch('/api/backup/info');
+      if (res.ok) {
+        const data = await res.json();
+        setBackupInfo(data);
+      }
+    } catch (err) {
+      console.error('Error fetching backup info:', err);
+    }
+  };
+
+  const handleDownloadBackup = () => {
+    window.location.href = '/api/backup/download';
+  };
+
+  const handleRestoreFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!window.confirm(`¿Estás seguro de que deseas restaurar la base de datos con "${file.name}"? Los datos actuales se reemplazarán por los del archivo.`)) {
+      e.target.value = '';
+      return;
+    }
+    setRestoreLoading(true);
+    setRestoreFeedback(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/backup/restore', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRestoreFeedback({ type: 'success', message: data.message });
+        fetchBackupInfo();
+        fetchGeneralSettings();
+        fetchCategories();
+        fetchBanks();
+        if (onSettingsUpdated) onSettingsUpdated();
+      } else {
+        setRestoreFeedback({ type: 'error', message: data.detail || 'Error al restaurar' });
+      }
+    } catch (err) {
+      setRestoreFeedback({ type: 'error', message: 'Error de red al restaurar la copia.' });
+    } finally {
+      setRestoreLoading(false);
+      e.target.value = '';
+    }
+  };
 
   const fetchAISettings = async () => {
     try {
@@ -1095,6 +1156,86 @@ export default function SettingsView({
               </button>
             </div>
           </form>
+
+          {/* Database Storage & Backups Card */}
+          <div className="p-6 rounded-xl bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                  Base de Datos y Copias de Seguridad
+                </h3>
+              </div>
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                🛡️ Datos persistentes en tu Mac
+              </span>
+            </div>
+
+            <p className="text-xs text-neutral-500 dark:text-neutral-400 leading-relaxed">
+              Tus extractos, configuraciones y modelos se guardan localmente en tu perfil de usuario. 
+              <strong> Cuando recibas una nueva versión en un archivo .zip, tus datos no se perderán</strong>: 
+              la nueva versión se conectará automáticamente a esta misma base de datos.
+            </p>
+
+            {backupInfo && (
+              <div className="p-3.5 rounded-lg bg-neutral-50 dark:bg-neutral-800/60 border border-neutral-200 dark:border-neutral-700 text-xs space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-neutral-500 dark:text-neutral-400">Ubicación activa:</span>
+                  <span className="font-mono text-[11px] text-neutral-800 dark:text-neutral-200 truncate max-w-[320px] sm:max-w-[420px]" title={backupInfo.db_path}>
+                    {backupInfo.db_path}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-neutral-600 dark:text-neutral-300">
+                  <span>Tamaño / Movimientos:</span>
+                  <span className="font-semibold text-neutral-800 dark:text-neutral-200">
+                    {backupInfo.size_formatted} · {backupInfo.transactions_count} transacciones registradas
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {restoreFeedback && (
+              <div className={`p-3 rounded-lg text-xs flex items-center space-x-2 ${
+                restoreFeedback.type === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+              }`}>
+                {restoreFeedback.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                )}
+                <span>{restoreFeedback.message}</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleDownloadBackup}
+                className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700/60 text-neutral-800 dark:text-neutral-200 text-xs font-semibold transition-all cursor-pointer shadow-xs"
+              >
+                <Download className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                <span>Descargar Copia de Seguridad (.db)</span>
+              </button>
+
+              <label className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700/60 text-neutral-800 dark:text-neutral-200 text-xs font-semibold transition-all cursor-pointer shadow-xs">
+                {restoreLoading ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-neutral-500" />
+                ) : (
+                  <Upload className="w-3.5 h-3.5 text-neutral-600 dark:text-neutral-300" />
+                )}
+                <span>{restoreLoading ? 'Restaurando...' : 'Restaurar Copia (.db)'}</span>
+                <input
+                  type="file"
+                  accept=".db,.sqlite,.sqlite3"
+                  onChange={handleRestoreFile}
+                  disabled={restoreLoading}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
 
           {/* Danger Zone: Reset Data */}
           <div className="p-6 rounded-xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-3">

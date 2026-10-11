@@ -20,7 +20,47 @@ if not ROOT_DIR:
                     break
                 curr = os.path.dirname(curr)
 
-DB_PATH = os.path.join(ROOT_DIR, "data", "bank_agent.db")
+def resolve_db_path():
+    # 1. Environment variable override (used by tests or custom deployment)
+    if os.environ.get("SPEND_AGENT_DB_PATH"):
+        p = os.path.abspath(os.environ["SPEND_AGENT_DB_PATH"])
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        return p
+
+    # 2. Portable mode: if explicitly requested via SPEND_AGENT_PORTABLE=1
+    if os.environ.get("SPEND_AGENT_PORTABLE", "0") == "1":
+        d = os.path.join(ROOT_DIR, "data")
+        os.makedirs(d, exist_ok=True)
+        return os.path.join(d, "bank_agent.db")
+
+    # 3. macOS / standard user profile directory
+    # On macOS: ~/Library/Application Support/SpendAgent/bank_agent.db
+    # On other systems: ~/.spendagent/bank_agent.db
+    if sys.platform == "darwin":
+        app_support = os.path.expanduser("~/Library/Application Support/SpendAgent")
+    else:
+        app_support = os.path.expanduser("~/.spendagent")
+
+    user_db_path = os.path.join(app_support, "bank_agent.db")
+    local_db_path = os.path.join(ROOT_DIR, "data", "bank_agent.db")
+
+    os.makedirs(app_support, exist_ok=True)
+
+    # Auto-migration:
+    # If Application Support DB does not exist, but local data/bank_agent.db exists and has content,
+    # copy it over so past data is seamlessly migrated to Application Support!
+    if not os.path.exists(user_db_path):
+        if os.path.exists(local_db_path) and os.path.getsize(local_db_path) > 0:
+            import shutil
+            try:
+                shutil.copy2(local_db_path, user_db_path)
+            except Exception as e:
+                print(f"Aviso migrando base de datos: {e}")
+                return local_db_path
+
+    return user_db_path
+
+DB_PATH = resolve_db_path()
 
 def get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -35,7 +75,7 @@ def get_connection():
 
 def backup_db():
     """
-    Creates an atomic rolling backup of bank_agent.db to data/backups/
+    Creates an atomic rolling backup of bank_agent.db to backups/
     """
     backup_dir = os.path.join(os.path.dirname(DB_PATH), "backups")
     os.makedirs(backup_dir, exist_ok=True)
@@ -51,6 +91,21 @@ def backup_db():
     except Exception as e:
         print("Backup error:", e)
         return None
+
+def restore_db(file_bytes: bytes) -> bool:
+    """
+    Safely restores bank_agent.db from uploaded bytes after verifying SQLite validity.
+    """
+    backup_db()
+    temp_path = DB_PATH + ".restore_tmp"
+    with open(temp_path, "wb") as f:
+        f.write(file_bytes)
+    test_conn = sqlite3.connect(temp_path)
+    test_conn.execute("SELECT count(*) FROM sqlite_master")
+    test_conn.close()
+    os.replace(temp_path, DB_PATH)
+    init_db()
+    return True
 
 def init_db():
     conn = get_connection()
@@ -89,6 +144,17 @@ def init_db():
         is_reimbursable INTEGER DEFAULT 0,
         priority INTEGER DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS knowledge_base (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        pattern TEXT NOT NULL UNIQUE,
+        category TEXT NOT NULL,
+        sample_amount REAL,
+        notes TEXT,
+        frequency INTEGER DEFAULT 1
     )
     """)
 

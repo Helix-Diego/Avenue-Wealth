@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from backend.database import (
-    get_connection, init_db, backup_db, sync_realtime_account_balances,
+    get_connection, init_db, backup_db, restore_db, DB_PATH, sync_realtime_account_balances,
     get_all_settings, get_setting, set_setting, get_categories_list,
     add_category, update_category, delete_category, get_supported_banks,
     update_bank_enabled, update_bank_alias, update_bank_details,
@@ -327,6 +327,78 @@ def reset_data_endpoint(req: Optional[ResetDataRequest] = None):
         return {"status": "success", "message": "Datos de transacciones, cuentas y préstamos eliminados correctamente."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Database Backup & Restore Endpoints ---
+
+@app.get("/api/backup/info")
+def get_backup_info():
+    """
+    Returns database file information: path, size, modification date, and transaction count.
+    """
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("SELECT count(*) FROM transactions")
+        tx_count = c.fetchone()[0]
+        conn.close()
+
+        size_bytes = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+        mod_time = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).isoformat() if os.path.exists(DB_PATH) else None
+
+        if size_bytes >= 1024 * 1024:
+            size_formatted = f"{size_bytes / (1024 * 1024):.1f} MB"
+        else:
+            size_formatted = f"{max(1, size_bytes // 1024)} KB"
+
+        return {
+            "db_path": DB_PATH,
+            "size_bytes": size_bytes,
+            "size_formatted": size_formatted,
+            "last_modified": mod_time,
+            "transactions_count": tx_count,
+            "is_application_support": "Application Support" in DB_PATH or ".spendagent" in DB_PATH
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/backup/download")
+def download_backup():
+    """
+    Creates an atomic snapshot of the database and downloads it as a .db file.
+    """
+    try:
+        backup_file = backup_db()
+        if not backup_file or not os.path.exists(backup_file):
+            raise HTTPException(status_code=500, detail="No se pudo crear la copia de seguridad")
+        
+        filename = f"spend_agent_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+        return FileResponse(
+            backup_file,
+            filename=filename,
+            media_type="application/x-sqlite3",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/backup/restore")
+async def restore_backup(file: UploadFile = File(...)):
+    """
+    Restores the database from an uploaded .db file.
+    """
+    try:
+        content = await file.read()
+        if len(content) < 100:
+            raise HTTPException(status_code=400, detail="El archivo proporcionado está vacío o no es una base de datos válida.")
+        
+        restore_db(content)
+        return {
+            "status": "success",
+            "message": "Base de datos restaurada correctamente. Tus transacciones y configuración están actualizadas."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error restaurando base de datos: {str(e)}")
 
 
 @app.get("/api/summary")

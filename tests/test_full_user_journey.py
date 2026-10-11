@@ -16,23 +16,37 @@ import sys
 import os
 import json
 import unittest
+import tempfile
 from datetime import datetime
 
-# Set up paths
+# Set up paths and isolated test database
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
+TEST_DB_FILE = tempfile.mktemp(suffix=".db", prefix="test_spendagent_")
+os.environ["SPEND_AGENT_DB_PATH"] = TEST_DB_FILE
+
 from fastapi.testclient import TestClient
 from backend.app import app
 from backend.database import get_connection, clean_all_transactions, init_db
+from backend.knowledge_base import init_knowledge_base
 
 class TestFullUserJourney(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         init_db()
+        init_knowledge_base()
         clean_all_transactions()
         cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        if os.path.exists(TEST_DB_FILE):
+            try:
+                os.remove(TEST_DB_FILE)
+            except Exception:
+                pass
 
     def test_01_forecast_empty_and_set_user_targets(self):
         """1. Forecast starts empty, user establishes their own income, savings & budget targets."""
