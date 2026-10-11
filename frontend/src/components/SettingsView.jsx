@@ -29,7 +29,8 @@ import {
   Database,
   Download,
   Upload,
-  HardDrive
+  HardDrive,
+  Pencil
 } from 'lucide-react';
 
 const PRESET_COLORS = [
@@ -81,6 +82,9 @@ export default function SettingsView({
   const [newCategoryColor, setNewCategoryColor] = useState('#64748B');
   const [categoryError, setCategoryError] = useState(null);
   const [deleteConfirmCat, setDeleteConfirmCat] = useState(null);
+  const [editingCategory, setEditingCategory] = useState(null);
+  const [editCategoryError, setEditCategoryError] = useState(null);
+  const [editingSaving, setEditingSaving] = useState(false);
 
   // Supported Banks State
   const [supportedBanks, setSupportedBanks] = useState([]);
@@ -326,8 +330,50 @@ export default function SettingsView({
       }
       setDeleteConfirmCat(null);
       await fetchCategories();
+      if (onCategoriesUpdated) onCategoriesUpdated();
     } catch (err) {
       alert(err.message);
+    }
+  };
+
+  const handleStartEditCategory = (cat) => {
+    setEditingCategory({
+      originalName: cat.name,
+      name: cat.name,
+      color: cat.color || '#64748B'
+    });
+    setEditCategoryError(null);
+  };
+
+  const handleSaveEditCategory = async (e) => {
+    e.preventDefault();
+    if (!editingCategory || !editingCategory.name.trim()) {
+      setEditCategoryError('El nombre de la categoría no puede estar vacío');
+      return;
+    }
+    setEditingSaving(true);
+    setEditCategoryError(null);
+    try {
+      const res = await fetch(`/api/categories/${encodeURIComponent(editingCategory.originalName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_name: editingCategory.name.trim(),
+          color: editingCategory.color,
+          icon: 'Tag'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || 'Error al actualizar la categoría');
+      }
+      setEditingCategory(null);
+      await fetchCategories();
+      if (onCategoriesUpdated) onCategoriesUpdated();
+    } catch (err) {
+      setEditCategoryError(err.message);
+    } finally {
+      setEditingSaving(false);
     }
   };
 
@@ -875,6 +921,14 @@ export default function SettingsView({
                     <div className="flex items-center space-x-1 opacity-70 group-hover:opacity-100">
                       <button
                         type="button"
+                        onClick={() => handleStartEditCategory(cat)}
+                        className="p-1 rounded text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors cursor-pointer"
+                        title="Modificar categoría"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => setDeleteConfirmCat(cat.name)}
                         className="p-1 rounded text-neutral-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                         title="Eliminar categoría"
@@ -916,6 +970,89 @@ export default function SettingsView({
                   </button>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Edit Category Modal */}
+          {editingCategory && (
+            <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <form onSubmit={handleSaveEditCategory} className="bg-white dark:bg-[#252525] p-5 rounded-xl border border-neutral-200 dark:border-neutral-700 max-w-sm w-full space-y-3 shadow-xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
+                    <Pencil className="w-4 h-4" />
+                    <span>Modificar Categoría</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setEditingCategory(null); setEditCategoryError(null); }}
+                    className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  Modifica el nombre o color de <strong>"{editingCategory.originalName}"</strong>. Al guardar, las transacciones asociadas se actualizarán al nuevo nombre.
+                </p>
+
+                {editCategoryError && (
+                  <p className="text-xs text-rose-600 font-medium">{editCategoryError}</p>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-300">
+                    Nombre:
+                  </label>
+                  <input
+                    type="text"
+                    value={editingCategory.name}
+                    onChange={(e) => setEditingCategory({ ...editingCategory, name: e.target.value })}
+                    className="w-full text-xs px-3 py-2 rounded-md bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-neutral-700 dark:text-neutral-300">
+                    Color de identificación:
+                  </label>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {PRESET_COLORS.map(col => (
+                      <button
+                        key={col.hex}
+                        type="button"
+                        onClick={() => setEditingCategory({ ...editingCategory, color: col.hex })}
+                        className={`w-6 h-6 rounded-full transition-transform cursor-pointer flex items-center justify-center ${
+                          editingCategory.color === col.hex ? 'scale-125 ring-2 ring-offset-2 ring-indigo-500' : 'hover:scale-110'
+                        }`}
+                        style={{ backgroundColor: col.hex }}
+                        title={col.name}
+                      >
+                        {editingCategory.color === col.hex && <Check className="w-3 h-3 text-white" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-2 border-t border-neutral-100 dark:border-neutral-800">
+                  <button
+                    type="button"
+                    onClick={() => { setEditingCategory(null); setEditCategoryError(null); }}
+                    disabled={editingSaving}
+                    className="px-3 py-1.5 rounded-md text-xs text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editingSaving}
+                    className="px-3.5 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer shadow-xs disabled:opacity-50 inline-flex items-center space-x-1.5"
+                  >
+                    {editingSaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                    <span>Guardar Cambios</span>
+                  </button>
+                </div>
+              </form>
             </div>
           )}
         </div>
