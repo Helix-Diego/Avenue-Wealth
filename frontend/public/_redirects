@@ -1,3 +1,5 @@
-# Cloudflare Pages SPA Routing & API Proxy
-# Ensures reloading the page on any route works seamlessly
-/*    /index.html   200
+# 1. API Reverse Proxy to Render Backend
+/api/*  https://avenue-wealth.onrender.com/api/:splat  200
+
+# 2. Cloudflare Pages SPA Routing
+/*      /index.html                                     200
