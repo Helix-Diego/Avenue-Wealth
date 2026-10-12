@@ -57,13 +57,47 @@ def get_deepseek_config() -> Dict[str, Any]:
         "company_enabled": company_enabled
     }
 
+import re
+
+try:
+    import certifi
+    _DEFAULT_CA_FILE = certifi.where()
+except ImportError:
+    _DEFAULT_CA_FILE = None
+
+PROMPT_INJECTION_PATTERNS = [
+    r"(?i)ignore\s+(all\s+)?(previous|prior|above)\s+instructions",
+    r"(?i)disregard\s+(all\s+)?(previous|prior|above)\s+instructions",
+    r"(?i)system\s+prompt",
+    r"(?i)reveal\s+(the\s+)?(secret|api[_\s-]?key|master\s+key|system\s+instructions)",
+    r"(?i)you\s+are\s+now\s+(DAN|unfiltered|jailbroken)",
+    r"(?i)DAN\s+mode",
+    r"(?i)developer\s+mode",
+    r"(?i)act\s+as\s+(an?\s+)?(unfiltered|jailbroken|evil|developer)",
+    r"(?i)jailbreak",
+    r"(?i)bypass\s+(the\s+)?guardrails?",
+    r"(?i)(olvida|desestima|ignora)\s+(todas\s+las\s+)?(reglas|instrucciones|directrices)",
+    r"(?i)repite\s+(el\s+)?(system\s+prompt|las\s+instrucciones\s+del\s+sistema)",
+    r"(?i)(muestra|revela|dame)\s+(el\s+system\s+prompt|las\s+contraseñas|las\s+claves|las\s+instrucciones)",
+]
+
+def sanitize_user_input(text: str) -> str:
+    """Sanitizes user prompt inputs against jailbreaks and instruction override attempts."""
+    if not text:
+        return ""
+    clean = text.strip()
+    for pattern in PROMPT_INJECTION_PATTERNS:
+        if re.search(pattern, clean):
+            return "[Consulta rechazada por los guardrails de seguridad de Avenue Wealth: intento de alteración de directrices o extracción del sistema detectado.]"
+    return clean[:4000]
+
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
 
 def get_ssl_context():
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+    """Returns secure SSL context with strict hostname verification and Mozilla CA certificates."""
+    if _DEFAULT_CA_FILE and os.path.exists(_DEFAULT_CA_FILE):
+        return ssl.create_default_context(cafile=_DEFAULT_CA_FILE)
+    return ssl.create_default_context()
 
 def test_deepseek_connection(api_key: str = None, model: str = None) -> Dict[str, Any]:
     """
@@ -326,9 +360,9 @@ def chat_financial_assistant(
     Interactive financial intelligence chat with DeepSeek for Avenue Wealth.
     """
     cfg = get_deepseek_config()
-    user_name = cfg.get("user_name") or "Usuario"
+    clean_name = re.sub(r'[^\w\s\.-]', '', cfg.get("user_name") or "Usuario").strip()[:40] or "Usuario"
 
-    system_prompt = f"""Eres el Asesor de Inteligencia Financiera y Gestión Patrimonial de Avenue Wealth para {user_name}.
+    system_prompt = f"""Eres el Asesor de Inteligencia Financiera y Gestión Patrimonial de Avenue Wealth para {clean_name}.
 Avenue Wealth es una plataforma premium de banca privada y optimización patrimonial integral. Tu misión es proporcionar asesoramiento financiero de nivel institucional: riguroso, proactivo, claro y adaptado a la realidad del usuario.
 
 =======================================================
@@ -370,7 +404,15 @@ DIRECTRICES DE FORMATO Y ESTILO:
 5. Sé proactivo: además de resolver la pregunta exacta del usuario, identifica patrones de gasto hormiga, desviaciones respecto a meses previos o ventajas fiscales/patrimoniales en sus cifras.
 """
 
-    api_messages = [{"role": "system", "content": system_prompt}] + messages
+    sanitized_messages = []
+    for m in messages:
+        r = m.get("role", "user")
+        if r not in ("user", "assistant"):
+            r = "user"
+        content = sanitize_user_input(str(m.get("content", "")))
+        sanitized_messages.append({"role": r, "content": content})
+
+    api_messages = [{"role": "system", "content": system_prompt}] + sanitized_messages
     return call_deepseek(api_messages, temperature=0.25, max_tokens=4096)
 
 

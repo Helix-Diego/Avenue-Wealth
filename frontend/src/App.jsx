@@ -94,7 +94,7 @@ export default function App() {
   }, [darkMode]);
 
   // Allowed beta users
-  const ALLOWED_BETA_EMAILS = ['diegotcach@gmail.com', 'carla.garcia.faya@gmail.com', 'hidesinoquizas@gmail.com'];
+  const ALLOWED_BETA_EMAILS = ['diegotcach@gmail.com', 'carla.garcia.faya@gmail.com', 'hidesinoquizas@gmail.com', 'violetacrespo2002@gmail.com'];
 
   // Listen to Supabase Auth state changes
   useEffect(() => {

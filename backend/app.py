@@ -55,7 +55,15 @@ cors_origins_raw = os.environ.get("CORS_ORIGINS", "")
 if cors_origins_raw:
     origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
 else:
-    origins = ["*"]
+    origins = [
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8000",
+        "http://localhost:8001",
+        "http://127.0.0.1:8001",
+        "https://avenue-wealth.pages.dev"
+    ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,6 +72,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+import time
+from collections import defaultdict
+
+_CHAT_RATE_LIMITS = defaultdict(list)
+CHAT_MAX_PER_MINUTE = 20
+
+def check_chat_rate_limit(client_id: str):
+    now = time.time()
+    _CHAT_RATE_LIMITS[client_id] = [t for t in _CHAT_RATE_LIMITS[client_id] if now - t < 60]
+    if len(_CHAT_RATE_LIMITS[client_id]) >= CHAT_MAX_PER_MINUTE:
+        raise HTTPException(
+            status_code=429,
+            detail="Has superado el límite de consultas de IA (máximo 20 por minuto). Por favor espera un momento."
+        )
+    _CHAT_RATE_LIMITS[client_id].append(now)
 
 # Startup
 @app.on_event("startup")
@@ -353,11 +377,11 @@ def delete_category_endpoint(category_name: str, fallback_category: str = "Otras
 # --- Supported Banks API ---
 
 @app.get("/api/settings/banks")
-def get_supported_banks_endpoint():
+def get_supported_banks_endpoint(current_user: User = Depends(get_current_user)):
     return {"banks": get_supported_banks()}
 
 @app.put("/api/settings/banks/{bank_id}")
-def update_supported_bank_endpoint(bank_id: str, req: BankUpdateRequest):
+def update_supported_bank_endpoint(bank_id: str, req: BankUpdateRequest, current_user: User = Depends(require_roles(["admin"]))):
     try:
         res = update_bank_details(bank_id, enabled=req.enabled, alias=req.alias)
         return res
@@ -367,7 +391,7 @@ def update_supported_bank_endpoint(bank_id: str, req: BankUpdateRequest):
 # --- AI Configuration & Test API ---
 
 @app.get("/api/settings/ai")
-def get_ai_settings_endpoint():
+def get_ai_settings_endpoint(current_user: User = Depends(require_roles(["admin"]))):
     cfg = get_deepseek_config()
     raw_key = cfg.get("api_key", "")
     masked_key = ""
@@ -382,13 +406,13 @@ def get_ai_settings_endpoint():
     }
 
 @app.post("/api/settings/ai")
-def update_ai_settings_endpoint(req: AISettingsUpdate):
+def update_ai_settings_endpoint(req: AISettingsUpdate, current_user: User = Depends(require_roles(["admin"]))):
     if req.api_key is not None:
-        set_setting("deepseek_api_key", req.api_key.strip())
+        set_setting("deepseek_api_key", req.api_key.strip(), user_id=current_user.id)
     if req.model is not None:
-        set_setting("deepseek_model", req.model.strip())
+        set_setting("deepseek_model", req.model.strip(), user_id=current_user.id)
     if req.enabled is not None:
-        set_setting("ai_enabled", "1" if req.enabled else "0")
+        set_setting("ai_enabled", "1" if req.enabled else "0", user_id=current_user.id)
     
     cfg = get_deepseek_config()
     raw_key = cfg.get("api_key", "")
@@ -402,15 +426,15 @@ def update_ai_settings_endpoint(req: AISettingsUpdate):
     }
 
 @app.post("/api/settings/ai/test")
-def test_ai_connection_endpoint(req: AITestRequest):
+def test_ai_connection_endpoint(req: AITestRequest, current_user: User = Depends(require_roles(["admin"]))):
     res = test_deepseek_connection(req.api_key, req.model)
     return res
 
 # --- General Settings & Wipe API ---
 
 @app.get("/api/settings/general")
-def get_general_settings_endpoint():
-    settings = get_all_settings()
+def get_general_settings_endpoint(current_user: User = Depends(get_current_user)):
+    settings = get_all_settings(user_id=current_user.id)
     return {
         "user_name": settings.get("user_name", "Mi Espacio"),
         "company_name": settings.get("company_name", ""),
@@ -420,24 +444,28 @@ def get_general_settings_endpoint():
     }
 
 @app.put("/api/settings/general")
-def update_general_settings_endpoint(req: GeneralSettingsUpdate):
+def update_general_settings_endpoint(req: GeneralSettingsUpdate, current_user: User = Depends(get_current_user)):
     if req.user_name is not None:
-        set_setting("user_name", req.user_name.strip())
+        set_setting("user_name", req.user_name.strip(), user_id=current_user.id)
     if req.company_name is not None:
-        set_setting("company_name", req.company_name.strip())
+        set_setting("company_name", req.company_name.strip(), user_id=current_user.id)
     if req.enable_company_expenses is not None:
-        set_setting("enable_company_expenses", "1" if req.enable_company_expenses else "0")
+        set_setting("enable_company_expenses", "1" if req.enable_company_expenses else "0", user_id=current_user.id)
     if req.currency is not None:
-        set_setting("currency", req.currency.strip())
+        set_setting("currency", req.currency.strip(), user_id=current_user.id)
     if req.onboarding_completed is not None:
-        set_setting("onboarding_completed", "1" if req.onboarding_completed else "0")
+        set_setting("onboarding_completed", "1" if req.onboarding_completed else "0", user_id=current_user.id)
     return {"status": "updated"}
 
 @app.post("/api/settings/reset-data")
-def reset_data_endpoint(req: Optional[ResetDataRequest] = None):
+def reset_data_endpoint(req: Optional[ResetDataRequest] = None, current_user: User = Depends(get_current_user)):
     try:
-        clean_all_transactions(keep_settings=req.keep_settings if req and req.keep_settings is not None else True)
-        return {"status": "success", "message": "Datos de transacciones, cuentas y préstamos eliminados correctamente."}
+        # Multi-tenant safety: regular users only wipe their own data; admin can wipe all if specified
+        target_uid = current_user.id
+        if current_user.role == "admin" and getattr(req, "wipe_all", False):
+            target_uid = "all"
+        clean_all_transactions(keep_settings=req.keep_settings if req and req.keep_settings is not None else True, user_id=target_uid)
+        return {"status": "success", "message": "Datos de transacciones, cuentas y préstamos eliminados correctamente para tu cuenta."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -445,7 +473,7 @@ def reset_data_endpoint(req: Optional[ResetDataRequest] = None):
 # --- Database Backup & Restore Endpoints ---
 
 @app.get("/api/backup/info")
-def get_backup_info():
+def get_backup_info(current_user: User = Depends(require_roles(["admin"]))):
     """
     Returns database file information: path, size, modification date, and transaction count.
     """
@@ -477,7 +505,7 @@ def get_backup_info():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/backup/download")
-def download_backup():
+def download_backup(current_user: User = Depends(require_roles(["admin"]))):
     """
     Creates an atomic snapshot of the database and downloads it as a .db file.
     """
@@ -497,7 +525,7 @@ def download_backup():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/backup/restore")
-async def restore_backup(file: UploadFile = File(...)):
+async def restore_backup(file: UploadFile = File(...), current_user: User = Depends(require_roles(["admin"]))):
     """
     Restores the database from an uploaded .db file.
     """
@@ -1327,11 +1355,11 @@ def get_portfolio(current_user: User = Depends(get_current_user)):
 # --- Stocks (Finnhub Live Search, Quotes & Positions) ---
 
 @app.get("/api/stocks/search")
-def search_stocks_endpoint(q: str):
+def search_stocks_endpoint(q: str, current_user: User = Depends(get_current_user)):
     return {"results": search_stocks_finnhub(q)}
 
 @app.get("/api/stocks/quote")
-def get_stock_quote_endpoint(symbol: str):
+def get_stock_quote_endpoint(symbol: str, current_user: User = Depends(get_current_user)):
     return fetch_live_stock_quote(symbol)
 
 @app.post("/api/stocks")
@@ -1369,11 +1397,11 @@ def list_funds_endpoint(current_user: User = Depends(get_current_user)):
     return {"funds": summary.get("funds", []), "summary": summary.get("funds_summary", {})}
 
 @app.get("/api/portfolio/funds/lookup")
-def lookup_fund_endpoint(isin: str):
+def lookup_fund_endpoint(isin: str, current_user: User = Depends(get_current_user)):
     return fetch_fund_nav_and_name(isin)
 
 @app.post("/api/portfolio/funds")
-def create_fund_endpoint(req: FundCreateRequest):
+def create_fund_endpoint(req: FundCreateRequest, current_user: User = Depends(get_current_user)):
     try:
         return add_or_update_fund(
             isin=req.isin,
@@ -1385,7 +1413,7 @@ def create_fund_endpoint(req: FundCreateRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/portfolio/funds/{isin}")
-def delete_fund_endpoint(isin: str):
+def delete_fund_endpoint(isin: str, current_user: User = Depends(get_current_user)):
     try:
         return delete_fund(isin)
     except Exception as e:
@@ -1995,6 +2023,10 @@ def get_analytics_advanced(month: Optional[str] = None, current_user: User = Dep
 
 @app.post("/api/chat")
 async def chat_with_agent_endpoint(req: ChatRequest, current_user: User = Depends(get_current_user)):
+    check_chat_rate_limit(current_user.id)
+    if not req.messages or len(req.messages) > 30:
+        raise HTTPException(status_code=400, detail="Número de mensajes inválido (1-30).")
+
     try:
         latest_user_query = req.messages[-1].content if req.messages else None
         context_text = build_llm_financial_context(user_query=latest_user_query, user_id=current_user.id)
@@ -2006,6 +2038,8 @@ async def chat_with_agent_endpoint(req: ChatRequest, current_user: User = Depend
             selected_month=req.selected_month
         )
         return {"response": reply}
+    except HTTPException:
+        raise
     except Exception as e:
         print("Chat error:", e)
         raise HTTPException(status_code=500, detail=f"Error al comunicar con DeepSeek: {str(e)}")

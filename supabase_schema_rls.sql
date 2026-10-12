@@ -50,7 +50,7 @@ BEGIN
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', 'Usuario'),
-    COALESCE(NEW.raw_app_meta_data->>'role', NEW.raw_user_meta_data->>'role', 'user')
+    COALESCE(NEW.raw_app_meta_data->>'role', 'user')
   )
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
@@ -211,7 +211,8 @@ CREATE POLICY "Users can view own profile"
 
 CREATE POLICY "Users can update own profile" 
     ON public.profiles FOR UPDATE 
-    USING (auth.uid() = id);
+    USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id AND role = (SELECT role FROM public.profiles WHERE id = auth.uid()));
 
 -- 2. Transactions Policies
 CREATE POLICY "Tenant isolation: transactions" 

@@ -56,19 +56,25 @@ def decode_and_verify_jwt(token: str, secret: Optional[str] = None) -> Dict[str,
     except Exception:
         raise HTTPException(status_code=401, detail="Error al decodificar la carga útil del token.")
 
+    if header.get("alg") == "none":
+        raise HTTPException(status_code=401, detail="Algoritmo 'none' no permitido.")
+
     # Validate expiration time if present
     if "exp" in payload:
         now = int(time.time())
         if now > payload["exp"]:
             raise HTTPException(status_code=401, detail="El token de sesión ha expirado.")
 
-    # Validate signature if secret is provided
+    # Validate signature if secret is provided or require_auth is active
+    require_auth = os.environ.get("REQUIRE_AUTH", "0").lower() in ("1", "true", "yes")
     if secret:
         signing_input = f"{header_b64}.{payload_b64}".encode("utf-8")
         expected_sig = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
         actual_sig = base64url_decode(signature_b64)
         if not hmac.compare_digest(expected_sig, actual_sig):
             raise HTTPException(status_code=401, detail="Firma criptográfica del token inválida.")
+    elif require_auth:
+        raise HTTPException(status_code=500, detail="Error de configuración: Se requiere SUPABASE_JWT_SECRET para validar firmas en producción.")
 
     return payload
 
@@ -146,7 +152,7 @@ def get_current_user(
     email = payload.get("email") or f"{user_id}@user.avenuewealth"
     
     # Whitelist check for private development
-    raw_allowed = os.environ.get("ALLOWED_EMAILS", "diegotcach@gmail.com,carla.garcia.faya@gmail.com,hidesinoquizas@gmail.com")
+    raw_allowed = os.environ.get("ALLOWED_EMAILS", "diegotcach@gmail.com,carla.garcia.faya@gmail.com,hidesinoquizas@gmail.com,violetacrespo2002@gmail.com")
     allowed_list = [e.strip().lower() for e in raw_allowed.split(",") if e.strip()]
     clean_email = email.lower().strip()
     is_whitelisted = (
@@ -161,16 +167,22 @@ def get_current_user(
             detail=f"Acceso restringido: Avenue Wealth está en fase beta privada. El correo '{clean_email}' no está en la lista de acceso autorizado."
         )
     
-    # Extract role from metadata (Supabase user_metadata or app_metadata)
+    # Extract role securely: Supabase app_metadata is server-managed and tamper-proof.
+    # user_metadata is user-writable by clients on signup, so its 'role' field is strictly ignored for security.
     role = "user"
     app_meta = payload.get("app_metadata", {})
     user_meta = payload.get("user_metadata", {})
     if isinstance(app_meta, dict) and app_meta.get("role") in VALID_ROLES:
         role = app_meta["role"]
-    elif isinstance(user_meta, dict) and user_meta.get("role") in VALID_ROLES:
-        role = user_meta["role"]
-    elif payload.get("role") in VALID_ROLES:
+    elif payload.get("role") in VALID_ROLES and payload.get("role") != "admin":
         role = payload["role"]
+    elif payload.get("role") == "admin" and (
+        user_id == DEFAULT_DEV_USER_ID or
+        (isinstance(app_meta, dict) and app_meta.get("role") == "admin") or
+        clean_email.endswith("@avenuewealth.local") or
+        clean_email.endswith("@avenue.wealth")
+    ):
+        role = "admin"
 
     full_name = "Usuario"
     if isinstance(user_meta, dict):
