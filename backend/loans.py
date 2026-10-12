@@ -192,16 +192,14 @@ def sync_discovered_loans():
     conn.commit()
     conn.close()
 
-def get_loans_summary() -> Dict[str, Any]:
+def get_loans_summary(user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     """
     Returns complete dashboard analytics for all active loans and credit facilities.
     """
-    sync_discovered_loans()
-
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM loans ORDER BY id ASC")
+    cursor.execute("SELECT * FROM loans WHERE user_id = ? ORDER BY id ASC", (user_id,))
     loan_rows = cursor.fetchall()
 
     loans_data = []

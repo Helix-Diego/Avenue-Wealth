@@ -44,6 +44,7 @@ import {
   CartesianGrid, 
   ReferenceLine 
 } from 'recharts';
+import { authFetch } from '../supabaseClient';
 
 export default function PortfolioView({ 
   portfolio, 
@@ -93,7 +94,7 @@ export default function PortfolioView({
     const timer = setTimeout(async () => {
       setSearchingStocks(true);
       try {
-        const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(stockSearchQuery.trim())}`);
+        const res = await authFetch(`/api/stocks/search?q=${encodeURIComponent(stockSearchQuery.trim())}`);
         const data = await res.json();
         setStockSearchResults(data.results || []);
       } catch (err) {
@@ -111,7 +112,7 @@ export default function PortfolioView({
     setStockSearchQuery('');
     setStockSearchResults([]);
     try {
-      const res = await fetch(`/api/stocks/quote?symbol=${encodeURIComponent(item.symbol)}`);
+      const res = await authFetch(`/api/stocks/quote?symbol=${encodeURIComponent(item.symbol)}`);
       const q = await res.json();
       setCurrentMarketQuote(q);
       if (q.price && !stockAvgPrice) {
@@ -127,7 +128,7 @@ export default function PortfolioView({
     if (!selectedStockSymbol) return;
     setSavingStock(true);
     try {
-      await fetch('/api/stocks', {
+      await authFetch('/api/stocks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -155,7 +156,7 @@ export default function PortfolioView({
   const handleDeleteStock = async (symbol) => {
     if (!window.confirm(`¿Seguro que deseas eliminar la posición en ${symbol}?`)) return;
     try {
-      await fetch(`/api/stocks/${encodeURIComponent(symbol)}`, { method: 'DELETE' });
+      await authFetch(`/api/stocks/${encodeURIComponent(symbol)}`, { method: 'DELETE' });
       if (onRefreshPortfolio) await onRefreshPortfolio();
     } catch (err) {
       console.error('Error deleting stock holding:', err);
@@ -167,7 +168,7 @@ export default function PortfolioView({
     setLookingUpFund(true);
     setFundLookupNotice(null);
     try {
-      const res = await fetch(`/api/portfolio/funds/lookup?isin=${encodeURIComponent(newFundIsin.trim())}`);
+      const res = await authFetch(`/api/portfolio/funds/lookup?isin=${encodeURIComponent(newFundIsin.trim())}`);
       const data = await res.json();
       if (data) {
         if (data.name) setNewFundName(data.name);
@@ -187,7 +188,7 @@ export default function PortfolioView({
     if (!newFundIsin.trim()) return;
     setSavingFund(true);
     try {
-      await fetch('/api/portfolio/funds', {
+      await authFetch('/api/portfolio/funds', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -213,7 +214,7 @@ export default function PortfolioView({
   const handleDeleteFund = async (isin) => {
     if (!window.confirm(`¿Seguro que deseas eliminar el fondo ${isin} y su historial de aportaciones?`)) return;
     try {
-      await fetch(`/api/portfolio/funds/${encodeURIComponent(isin)}`, { method: 'DELETE' });
+      await authFetch(`/api/portfolio/funds/${encodeURIComponent(isin)}`, { method: 'DELETE' });
       if (onRefreshPortfolio) await onRefreshPortfolio();
     } catch (err) {
       console.error('Error deleting fund:', err);
@@ -223,7 +224,7 @@ export default function PortfolioView({
   const handleDeleteFundContribution = async (contribId) => {
     if (!window.confirm('¿Seguro que deseas eliminar esta aportación?')) return;
     try {
-      await fetch(`/api/portfolio/funds/contributions/${contribId}`, { method: 'DELETE' });
+      await authFetch(`/api/portfolio/funds/contributions/${contribId}`, { method: 'DELETE' });
       if (onRefreshPortfolio) await onRefreshPortfolio();
     } catch (err) {
       console.error('Error deleting contribution:', err);
@@ -234,8 +235,8 @@ export default function PortfolioView({
     setRefreshingLive(true);
     try {
       await Promise.all([
-        fetch('/api/stocks/refresh', { method: 'POST' }),
-        fetch('/api/portfolio/funds/refresh-all', { method: 'POST' })
+        authFetch('/api/stocks/refresh', { method: 'POST' }),
+        authFetch('/api/portfolio/funds/refresh-all', { method: 'POST' })
       ]);
       if (onRefreshPortfolio) await onRefreshPortfolio();
     } catch (err) {
@@ -270,7 +271,7 @@ export default function PortfolioView({
 
   useEffect(() => {
     setLoadingHabits(true);
-    fetch('/api/forecast/habits-and-goals')
+    authFetch('/api/forecast/habits-and-goals')
       .then(res => res.json())
       .then(data => {
         setHabitsData(data);
@@ -298,7 +299,7 @@ export default function PortfolioView({
     if (!editingAccount) return;
     setSavingBalance(true);
     try {
-      await fetch('/api/accounts/balance', {
+      await authFetch('/api/accounts/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   Sparkles, 
   TrendingUp, 
@@ -41,7 +42,7 @@ export default function ForecastView({
     e.preventDefault();
     setSavingSettings(true);
     try {
-      const res = await fetch('/api/forecast/settings', {
+      const res = await authFetch('/api/forecast/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

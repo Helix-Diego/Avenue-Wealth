@@ -507,7 +507,7 @@ def record_fund_subscription_from_statement(conn, date_str: str, amount_eur: flo
 # 3. CONSOLIDATED PORTFOLIO SUMMARY
 # =========================================================================
 
-def get_portfolio_summary() -> dict:
+def get_portfolio_summary(user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     """
     Returns full portfolio breakdown:
     - Real-time stock portfolio via Finnhub
@@ -521,7 +521,7 @@ def get_portfolio_summary() -> dict:
     eur_usd = fetch_eur_usd_rate()
 
     # 1. Stocks
-    cursor.execute("SELECT * FROM portfolio_stocks WHERE shares > 0 ORDER BY (shares * current_price) DESC")
+    cursor.execute("SELECT * FROM portfolio_stocks WHERE shares > 0 AND user_id = ? ORDER BY (shares * current_price) DESC", (user_id,))
     stock_rows = cursor.fetchall()
 
     stocks = []
@@ -594,8 +594,8 @@ def get_portfolio_summary() -> dict:
         cursor.execute("""
         SELECT SUM(shares), SUM(invested_amount)
         FROM fund_contributions
-        WHERE fund_isin = ? OR (fund_isin IS NULL AND ? = 'IE00BYX5P602')
-        """, (f_isin, f_isin))
+        WHERE (fund_isin = ? OR (fund_isin IS NULL AND ? = 'IE00BYX5P602')) AND user_id = ?
+        """, (f_isin, f_isin, user_id))
         contrib_sums = cursor.fetchone()
         contrib_shares = float(contrib_sums[0] or 0.0)
         contrib_invested = float(contrib_sums[1] or 0.0)
@@ -609,9 +609,9 @@ def get_portfolio_summary() -> dict:
         cursor.execute("""
         SELECT id, date, shares, invested_amount, nav_price, funding_account, notes
         FROM fund_contributions
-        WHERE fund_isin = ? OR (fund_isin IS NULL AND ? = 'IE00BYX5P602')
+        WHERE (fund_isin = ? OR (fund_isin IS NULL AND ? = 'IE00BYX5P602')) AND user_id = ?
         ORDER BY date DESC, id DESC
-        """, (f_isin, f_isin))
+        """, (f_isin, f_isin, user_id))
         c_rows = [dict(c) for c in cursor.fetchall()]
 
         total_funds_value_eur += f_val
@@ -649,8 +649,8 @@ def get_portfolio_summary() -> dict:
     }
 
     # 3. Real Bank balances & Liquid Cash
-    sync_realtime_account_balances(conn)
-    cursor.execute("SELECT * FROM bank_accounts ORDER BY is_credit_card ASC, current_balance DESC")
+    sync_realtime_account_balances(conn, user_id=user_id)
+    cursor.execute("SELECT * FROM bank_accounts WHERE user_id = ? ORDER BY is_credit_card ASC, current_balance DESC", (user_id,))
     account_rows = cursor.fetchall()
 
     accounts_list = []
@@ -677,7 +677,7 @@ def get_portfolio_summary() -> dict:
     liquid_cash = round(total_liquid_cash, 2)
 
     # 4. Pending Company Reimbursements
-    cursor.execute("SELECT SUM(ABS(amount)) FROM transactions WHERE is_reimbursable = 1 AND reimbursement_status = 'pending'")
+    cursor.execute("SELECT SUM(ABS(amount)) FROM transactions WHERE is_reimbursable = 1 AND reimbursement_status = 'pending' AND user_id = ?", (user_id,))
     pending_reimbursements = cursor.fetchone()[0] or 0.0
 
     conn.close()
@@ -685,7 +685,7 @@ def get_portfolio_summary() -> dict:
     # 5. Outstanding Debt
     from backend.loans import get_loans_summary
     try:
-        loans_summary = get_loans_summary()
+        loans_summary = get_loans_summary(user_id=user_id)
         loans_kpis = loans_summary.get("global_kpis", {})
         total_debt = round(float(loans_kpis.get("outstanding_debt", 0.0)), 2)
         monthly_debt_burden = round(float(loans_kpis.get("monthly_burden", 0.0)), 2)

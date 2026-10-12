@@ -1,8 +1,8 @@
 import calendar
 from datetime import datetime
-from backend.database import get_connection
+from backend.database import get_connection, get_all_settings
 
-def calculate_monthly_forecast(year: int = None, month: int = None):
+def calculate_monthly_forecast(year: int = None, month: int = None, user_id: str = "00000000-0000-0000-0000-000000000000"):
     now = datetime.now()
     if year is None:
         year = now.year
@@ -17,21 +17,17 @@ def calculate_monthly_forecast(year: int = None, month: int = None):
     days_elapsed = now.day if (year == now.year and month == now.month) else num_days
     days_remaining = max(1, num_days - days_elapsed)
 
-    # Fetch all transactions for this month
+    # Fetch all transactions for this month isolated by user_id
     month_prefix = f"{year:04d}-{month:02d}%"
     cursor.execute("""
     SELECT * FROM transactions
-    WHERE date LIKE ?
+    WHERE date LIKE ? AND user_id = ?
     ORDER BY date ASC
-    """, (month_prefix,))
+    """, (month_prefix, user_id))
     txs = cursor.fetchall()
 
-    # Read user-configured forecast settings from database
-    cursor.execute("""
-    SELECT key, value FROM user_settings 
-    WHERE key IN ('forecast_expected_income', 'forecast_target_savings', 'forecast_budget_max', 'enable_company_expenses')
-    """)
-    settings_map = dict(cursor.fetchall())
+    # Read user-configured forecast settings from database isolated by user_id
+    settings_map = get_all_settings(user_id=user_id)
     expected_income = float(settings_map.get("forecast_expected_income", 0.0) or 0.0)
     target_savings = float(settings_map.get("forecast_target_savings", 0.0) or 0.0)
     budget_max = float(settings_map.get("forecast_budget_max", 0.0) or 0.0)
@@ -262,7 +258,7 @@ def calculate_monthly_forecast(year: int = None, month: int = None):
         "recommendations": recommendations
     }
 
-def get_habits_and_goals_analysis():
+def get_habits_and_goals_analysis(user_id: str = "00000000-0000-0000-0000-000000000000"):
     """
     Analyzes historical spending habits across all categories, separates fixed vs reducible/discretionary
     expenses, and provides customized savings targets and advice to achieve a financial goal.
@@ -274,10 +270,10 @@ def get_habits_and_goals_analysis():
     cursor.execute("""
     SELECT DISTINCT substr(date, 1, 7) as m
     FROM transactions
-    WHERE is_reimbursable = 0
+    WHERE is_reimbursable = 0 AND user_id = ?
     ORDER BY m DESC
     LIMIT 6
-    """)
+    """, (user_id,))
     recent_months = [r[0] for r in cursor.fetchall() if r[0]]
     recent_months.reverse()
 
@@ -295,8 +291,9 @@ def get_habits_and_goals_analysis():
       AND amount > 0
       AND category IN ('Sueldo', 'Ingresos / Nómina', 'Otros ingresos')
       AND is_reimbursable = 0
+      AND user_id = ?
     GROUP BY m
-    """, recent_months)
+    """, (*recent_months, user_id))
     inc_by_m = [r[1] for r in cursor.fetchall()]
     avg_income = round(sum(inc_by_m) / len(inc_by_m), 2) if inc_by_m else 3200.0
 
@@ -311,13 +308,14 @@ def get_habits_and_goals_analysis():
     WHERE substr(date, 1, 7) IN ({placeholders})
       AND is_reimbursable = 0
       AND category NOT IN ('Liquidación Tarjetas', 'Inversiones y ahorros', 'Deudas y créditos', 'Prestamos familiares', 'Traspaso entre cuentas', 'Sueldo', 'Ingresos / Nómina', 'Otros ingresos', 'Gastos de Empresa')
+      AND user_id = ?
     GROUP BY category, m
-    """, recent_months)
+    """, (*recent_months, user_id))
     cat_rows = cursor.fetchall()
 
     # Current capital from portfolio
     from backend.portfolio import get_portfolio_summary
-    portfolio = get_portfolio_summary()
+    portfolio = get_portfolio_summary(user_id=user_id)
     current_capital = portfolio.get("capital_global", 0.0)
     current_cash = portfolio.get("liquid_cash", 0.0)
 

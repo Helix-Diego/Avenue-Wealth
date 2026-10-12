@@ -525,8 +525,8 @@ def get_summary(
     y = year or now.year
     m = month or now.month
 
-    forecast = calculate_monthly_forecast(y, m)
-    portfolio = get_portfolio_summary()
+    forecast = calculate_monthly_forecast(y, m, user_id=current_user.id)
+    portfolio = get_portfolio_summary(user_id=current_user.id)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1466,8 +1466,8 @@ class ForecastSettingsUpdate(BaseModel):
     budget_max: Optional[float] = None
 
 @app.get("/api/forecast/settings")
-def get_forecast_settings_endpoint():
-    settings = get_all_settings()
+def get_forecast_settings_endpoint(current_user: User = Depends(get_current_user)):
+    settings = get_all_settings(user_id=current_user.id)
     return {
         "expected_income": float(settings.get("forecast_expected_income", 0.0) or 0.0),
         "target_savings": float(settings.get("forecast_target_savings", 0.0) or 0.0),
@@ -1475,14 +1475,14 @@ def get_forecast_settings_endpoint():
     }
 
 @app.post("/api/forecast/settings")
-def update_forecast_settings_endpoint(req: ForecastSettingsUpdate):
+def update_forecast_settings_endpoint(req: ForecastSettingsUpdate, current_user: User = Depends(get_current_user)):
     if req.expected_income is not None:
-        set_setting("forecast_expected_income", str(req.expected_income))
+        set_setting("forecast_expected_income", str(req.expected_income), user_id=current_user.id)
     if req.target_savings is not None:
-        set_setting("forecast_target_savings", str(req.target_savings))
+        set_setting("forecast_target_savings", str(req.target_savings), user_id=current_user.id)
     if req.budget_max is not None:
-        set_setting("forecast_budget_max", str(req.budget_max))
-    settings = get_all_settings()
+        set_setting("forecast_budget_max", str(req.budget_max), user_id=current_user.id)
+    settings = get_all_settings(user_id=current_user.id)
     return {
         "status": "updated",
         "expected_income": float(settings.get("forecast_expected_income", 0.0) or 0.0),
@@ -1491,15 +1491,15 @@ def update_forecast_settings_endpoint(req: ForecastSettingsUpdate):
     }
 
 @app.get("/api/forecast")
-def get_forecast(year: Optional[int] = None, month: Optional[int] = None):
+def get_forecast(year: Optional[int] = None, month: Optional[int] = None, current_user: User = Depends(get_current_user)):
     now = datetime.now()
     y = year or now.year
     m = month or now.month
-    return calculate_monthly_forecast(y, m)
+    return calculate_monthly_forecast(y, m, user_id=current_user.id)
 
 @app.get("/api/forecast/habits-and-goals")
-def get_habits_and_goals():
-    return get_habits_and_goals_analysis()
+def get_habits_and_goals(current_user: User = Depends(get_current_user)):
+    return get_habits_and_goals_analysis(user_id=current_user.id)
 
 # --- Loans & Credit Facilities ---
 
