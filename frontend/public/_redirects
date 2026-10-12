@@ -1,0 +1,3 @@
+# Cloudflare Pages SPA Routing & API Proxy
+# Ensures reloading the page on any route works seamlessly
+/*    /index.html   200
