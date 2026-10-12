@@ -101,17 +101,20 @@ export default function App() {
         if (session.user.user_metadata?.full_name) {
           setUserName(session.user.user_metadata.full_name);
         }
+        refreshAll();
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         setCurrentUser(session.user);
         if (session.user.user_metadata?.full_name) {
           setUserName(session.user.user_metadata.full_name);
         }
-      } else {
+        refreshAll();
+      } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
+        refreshAll();
       }
     });
 
@@ -198,11 +201,16 @@ export default function App() {
             setActiveTab('dashboard');
           }
         }
-        const hasCompletedLocal = localStorage.getItem('spend_agent_onboarding_completed') === 'true';
-        if (!data.onboarding_completed && !hasCompletedLocal) {
-          setIsOnboarding(true);
-        } else {
+        if (data.onboarding_completed) {
+          localStorage.setItem('spend_agent_onboarding_completed', 'true');
           setIsOnboarding(false);
+        } else {
+          const hasCompletedLocal = localStorage.getItem('spend_agent_onboarding_completed') === 'true';
+          if (!hasCompletedLocal) {
+            setIsOnboarding(true);
+          } else {
+            setIsOnboarding(false);
+          }
         }
       }
     } catch (err) {

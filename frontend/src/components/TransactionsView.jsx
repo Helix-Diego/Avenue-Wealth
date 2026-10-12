@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   Search, 
   Filter, 
@@ -137,7 +138,7 @@ export default function TransactionsView({
   // Bank list & aliases state
   const [banksList, setBanksList] = useState([]);
   useEffect(() => {
-    fetch('/api/settings/banks')
+    authFetch('/api/settings/banks')
       .then(res => res.json())
       .then(data => {
         if (data?.banks && Array.isArray(data.banks)) setBanksList(data.banks);
@@ -277,7 +278,7 @@ export default function TransactionsView({
   const presentAccounts = Array.from(new Set(txList.map(t => t?.account_alias || t?.account).filter(Boolean)));
   
   // Build account tab options using bank aliases if available
-  const bankOptions = banks
+  const bankOptions = (banksList || [])
     .filter(b => Boolean(b && b.enabled))
     .map(b => b.alias || b.name)
     .filter(Boolean);
@@ -294,7 +295,7 @@ export default function TransactionsView({
 
       const directMatch = tAcc === sel || tAlias === sel || t.account === selectedAccount || t.account_alias === selectedAccount;
 
-      const matchedBank = banks.find(b => 
+      const matchedBank = (banksList || []).find(b => 
         (b.alias && b.alias.toLowerCase() === sel) ||
         (b.name && b.name.toLowerCase() === sel) ||
         (b.id && b.id.toLowerCase() === sel)
