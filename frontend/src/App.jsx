@@ -14,14 +14,17 @@ import GuideView from './components/GuideView';
 import NewTransactionModal from './components/NewTransactionModal';
 import FundContributionModal from './components/FundContributionModal';
 import UndoToast from './components/UndoToast';
+import OnboardingModal from './components/OnboardingModal';
+import { supabase, authFetch } from './supabaseClient';
 
 export default function App() {
   const [isOnboarding, setIsOnboarding] = useState(() => {
     return localStorage.getItem('spend_agent_onboarding_completed') !== 'true';
   });
+  const [currentUser, setCurrentUser] = useState(null);
   const [activeTab, setActiveTab] = useState(() => {
     const completed = localStorage.getItem('spend_agent_onboarding_completed');
-    return completed === 'true' ? 'dashboard' : 'settings';
+    return completed === 'true' ? 'dashboard' : 'dashboard';
   });
   const [darkMode, setDarkMode] = useState(() => {
     return localStorage.getItem('bank_agent_theme') === 'dark';
@@ -90,6 +93,31 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Listen to Supabase Auth state changes
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+        if (session.user.user_metadata?.full_name) {
+          setUserName(session.user.user_metadata.full_name);
+        }
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setCurrentUser(session.user);
+        if (session.user.user_metadata?.full_name) {
+          setUserName(session.user.user_metadata.full_name);
+        }
+      } else {
+        setCurrentUser(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   // Fetch initial summary
   const fetchSummary = async (monthStr = selectedMonth) => {
     try {
@@ -102,7 +130,7 @@ export default function App() {
           url = `/api/summary?year=${y}&month=${m}`;
         }
       }
-      const res = await fetch(url);
+      const res = await authFetch(url);
       const data = await res.json();
       setSummary(data);
       if (data?.available_months?.length > 0 && !data.available_months.includes(selectedMonth)) {
@@ -119,7 +147,7 @@ export default function App() {
       const url = (!monthStr || monthStr === 'all')
         ? '/api/transactions?limit=1000'
         : `/api/transactions?month=${monthStr}&limit=500`;
-      const res = await fetch(url);
+      const res = await authFetch(url);
       const data = await res.json();
       setTransactions(data.transactions || []);
     } catch (err) {
@@ -130,7 +158,7 @@ export default function App() {
   // Fetch agent doubts
   const fetchClarifications = async () => {
     try {
-      const res = await fetch('/api/clarifications');
+      const res = await authFetch('/api/clarifications');
       const data = await res.json();
       setClarifications(data.pending_doubts || []);
       if (data.available_categories && data.available_categories.length > 0) {
@@ -144,7 +172,7 @@ export default function App() {
   // Fetch dynamic categories
   const fetchCategories = async () => {
     try {
-      const res = await fetch('/api/categories');
+      const res = await authFetch('/api/categories');
       const data = await res.json();
       if (data && data.categories) {
         setCategories(data.categories.map(c => typeof c === 'string' ? c : c.name));
@@ -157,7 +185,7 @@ export default function App() {
   // Fetch general user settings (user name, company, etc.)
   const fetchGeneralSettings = async () => {
     try {
-      const res = await fetch('/api/settings/general');
+      const res = await authFetch('/api/settings/general');
       const data = await res.json();
       if (data) {
         if (data.user_name) {
@@ -173,7 +201,6 @@ export default function App() {
         const hasCompletedLocal = localStorage.getItem('spend_agent_onboarding_completed') === 'true';
         if (!data.onboarding_completed && !hasCompletedLocal) {
           setIsOnboarding(true);
-          setActiveTab('settings');
         } else {
           setIsOnboarding(false);
         }
@@ -328,6 +355,8 @@ export default function App() {
         companyPending={companyPending}
         userName={userName}
         enableCompanyExpenses={enableCompanyExpenses}
+        currentUser={currentUser}
+        onOpenOnboarding={() => setIsOnboarding(true)}
       />
 
       {/* Main Content Area */}
@@ -447,6 +476,7 @@ export default function App() {
             darkMode={darkMode}
             isOnboarding={isOnboarding}
             onCompleteOnboarding={handleCompleteOnboarding}
+            onOpenOnboarding={() => setIsOnboarding(true)}
           />
         )}
 
@@ -456,6 +486,20 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Windows 11 Out-of-Box Experience Onboarding Modal */}
+      <OnboardingModal
+        isOpen={isOnboarding}
+        onComplete={() => {
+          setIsOnboarding(false);
+          setActiveTab('dashboard');
+          refreshAll();
+        }}
+        currentUser={currentUser}
+        onUserUpdate={(u) => {
+          if (u?.name) setUserName(u.name);
+        }}
+      />
 
       {/* Modals & Floating Toasts */}
       <NewTransactionModal

@@ -53,7 +53,8 @@ export default function SettingsView({
   onSettingsUpdated, 
   darkMode, 
   isOnboarding = false, 
-  onCompleteOnboarding 
+  onCompleteOnboarding,
+  onOpenOnboarding
 }) {
   const [activeSubTab, setActiveSubTab] = useState('ai'); // 'ai' | 'categories' | 'banks' | 'general'
   
@@ -1293,6 +1294,34 @@ export default function SettingsView({
               </button>
             </div>
           </form>
+
+          {/* Windows 11 Onboarding Setup Card */}
+          <div className="p-6 rounded-xl bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200/80 dark:border-blue-900/40 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
+                  Asistente de Bienvenida (Estilo Windows 11)
+                </h3>
+              </div>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
+                OOBE Wizard
+              </span>
+            </div>
+            <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+              Vuelve a lanzar la pantalla de configuración guiada interactiva para ajustar tu nombre, vincular tu cuenta con Google, activar entidades bancarias o definir tus metas mensuales de ahorro.
+            </p>
+            <div>
+              <button
+                type="button"
+                onClick={onOpenOnboarding}
+                className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Relanzar Asistente de Inicio</span>
+              </button>
+            </div>
+          </div>
 
           {/* Database Storage & Backups Card */}
           <div className="p-6 rounded-xl bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] shadow-xs space-y-4">

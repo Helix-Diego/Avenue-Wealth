@@ -14,8 +14,11 @@ import {
   MessageSquare,
   Landmark,
   Settings,
-  BookOpen
+  BookOpen,
+  LogOut,
+  User
 } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 
 export default function Sidebar({ 
   activeTab, 
@@ -26,7 +29,9 @@ export default function Sidebar({
   setDarkMode,
   companyPending,
   userName = 'Mi Espacio',
-  enableCompanyExpenses = true
+  enableCompanyExpenses = true,
+  currentUser = null,
+  onOpenOnboarding = null
 }) {
   const navItems = [
     { id: 'dashboard', label: 'Visión General', icon: LayoutDashboard },
@@ -145,6 +150,50 @@ export default function Sidebar({
             <span className="text-[10px] font-mono font-bold text-emerald-600">En Vivo</span>
           </div>
         </div>
+      </div>
+
+      {/* User Session / Cloud Sync Section */}
+      <div className="px-2.5 py-2 border-t border-[#ececeb] dark:border-[#2f2f2f]">
+        {currentUser ? (
+          <div className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-[#282828] border border-[#e8e7e4] dark:border-[#333] shadow-xs">
+            <div className="flex items-center space-x-2 truncate">
+              {currentUser.user_metadata?.avatar_url ? (
+                <img 
+                  src={currentUser.user_metadata.avatar_url} 
+                  alt="" 
+                  className="w-6 h-6 rounded-full border border-neutral-200 dark:border-neutral-700" 
+                />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-[10px] font-bold">
+                  {currentUser.email?.charAt(0).toUpperCase() || 'U'}
+                </div>
+              )}
+              <div className="truncate">
+                <div className="text-[11px] font-semibold text-neutral-800 dark:text-neutral-200 truncate">
+                  {currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0]}
+                </div>
+                <div className="text-[9px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" /> Cloud Sync
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => supabase.auth.signOut()}
+              title="Cerrar sesión"
+              className="p-1 text-neutral-400 hover:text-rose-500 rounded transition-colors cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onOpenOnboarding}
+            className="w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-xl bg-blue-50/80 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/40 text-blue-700 dark:text-blue-300 text-xs font-semibold hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all cursor-pointer shadow-xs"
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>Iniciar Sesión / Registro</span>
+          </button>
+        )}
       </div>
 
       {/* Footer / Theme toggle & System info */}
