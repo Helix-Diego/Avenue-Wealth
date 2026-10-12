@@ -212,7 +212,7 @@ export default function App() {
 
   const handleCompleteOnboarding = async () => {
     try {
-      await fetch('/api/settings/general', {
+      await authFetch('/api/settings/general', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ onboarding_completed: true })
@@ -223,6 +223,7 @@ export default function App() {
     localStorage.setItem('spend_agent_onboarding_completed', 'true');
     setIsOnboarding(false);
     setActiveTab('dashboard');
+    refreshAll();
   };
 
   const refreshAll = async (monthStr = selectedMonth) => {
@@ -478,9 +479,6 @@ export default function App() {
               refreshAll();
             }}
             darkMode={darkMode}
-            isOnboarding={isOnboarding}
-            onCompleteOnboarding={handleCompleteOnboarding}
-            onOpenOnboarding={() => setIsOnboarding(true)}
           />
         )}
 

@@ -192,5 +192,20 @@ class TestRBACAndMultiTenant(unittest.TestCase):
         res_u1 = self.client.get("/api/transactions", headers=self.user1_headers)
         self.assertEqual(len(res_u1.json()["transactions"]), 1)
 
+    def test_06_delete_my_account(self):
+        """User deletes their own account: all their data is erased, other tenants remain safe."""
+        # User 2 deletes their account
+        res_del = self.client.delete("/api/auth/me", headers=self.user2_headers)
+        self.assertEqual(res_del.status_code, 200)
+        self.assertEqual(res_del.json()["status"], "account_deleted")
+
+        # User 2 has 0 transactions now
+        res_u2 = self.client.get("/api/transactions", headers=self.user2_headers)
+        self.assertEqual(len(res_u2.json()["transactions"]), 0)
+
+        # User 1 is unaffected and still has their transaction
+        res_u1 = self.client.get("/api/transactions", headers=self.user1_headers)
+        self.assertEqual(len(res_u1.json()["transactions"]), 1)
+
 if __name__ == "__main__":
     unittest.main()

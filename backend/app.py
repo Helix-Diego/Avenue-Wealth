@@ -263,6 +263,37 @@ def update_my_profile(
     upsert_user(current_user.id, current_user.email, body.full_name, current_user.role)
     return {"status": "ok", "full_name": body.full_name}
 
+@app.delete("/api/auth/me", tags=["Auth & RBAC"])
+def delete_my_account(current_user: User = Depends(get_current_user)):
+    """
+    Permanently deletes all data associated with the current user or guest:
+    transactions, accounts, loans, stocks, mutual funds, rules, settings, and user record.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    user_id = current_user.id
+
+    cursor.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+    deleted_txs = cursor.rowcount
+    cursor.execute("DELETE FROM bank_accounts WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM loans WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM portfolio_stocks WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM fund_contributions WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM category_rules WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM user_settings WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM categories WHERE user_id = ? AND is_system = 0", (user_id,))
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "account_deleted",
+        "user_id": user_id,
+        "deleted_transactions": deleted_txs,
+        "message": "Tu cuenta y todos tus datos han sido eliminados de forma permanente."
+    }
+
 @app.get("/api/admin/users", tags=["Admin RBAC"])
 def admin_list_users_endpoint(
     limit: int = Query(50, ge=1, le=200),

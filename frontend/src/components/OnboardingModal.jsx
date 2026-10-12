@@ -41,16 +41,11 @@ export default function OnboardingModal({
   onUserUpdate 
 }) {
   const [step, setStep] = useState(1);
-  const totalSteps = 5;
+  const totalSteps = 4;
 
-  // Step 1: Regional & Identity
-  const [name, setName] = useState('Mi Espacio');
-  const [currency, setCurrency] = useState('EUR');
-  const [language, setLanguage] = useState('es');
-
-  // Step 2: Auth State
+  // Step 1: Auth State
   const [authMode, setAuthMode] = useState('google'); // 'google' | 'email' | 'guest'
-  const [emailTab, setEmailTab] = useState('register'); // 'register' | 'login'
+  const [emailTab, setEmailTab] = useState('login'); // 'login' | 'register'
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -60,6 +55,11 @@ export default function OnboardingModal({
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
   const [sessionUser, setSessionUser] = useState(null);
+
+  // Step 2: Regional & Identity
+  const [name, setName] = useState('Mi Espacio');
+  const [currency, setCurrency] = useState('EUR');
+  const [language, setLanguage] = useState('es');
 
   // Step 3: Bank Selection
   const [selectedBanks, setSelectedBanks] = useState({
@@ -198,16 +198,23 @@ export default function OnboardingModal({
         });
         if (error) throw error;
         setName(fullName);
-        setAuthSuccess('¡Cuenta creada correctamente con cifrado seguro! Puedes continuar al siguiente paso.');
+        setAuthSuccess('¡Cuenta creada con éxito! Continuando con la configuración inicial...');
         if (data?.user) setSessionUser(data.user);
+        setTimeout(() => {
+          setStep(2);
+        }, 500);
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password
         });
         if (error) throw error;
-        setAuthSuccess('Sesión iniciada con éxito.');
+        setAuthSuccess('Sesión iniciada con éxito. Accediendo a tu espacio...');
         if (data?.user) setSessionUser(data.user);
+        localStorage.setItem('spend_agent_onboarding_completed', 'true');
+        setTimeout(() => {
+          if (onComplete) onComplete();
+        }, 500);
       }
     } catch (err) {
       setAuthError(err.message || 'Error en la autenticación.');
@@ -351,8 +358,9 @@ export default function OnboardingModal({
             {/* Top Bar with Stepper */}
             <div className="px-8 py-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between select-none">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-md">
-                  🏦
+                <div className="w-8 h-8 rounded-xl bg-neutral-900 dark:bg-white flex items-center justify-center p-1.5 shadow-md">
+                  <img src="/logo-icon-white.png" alt="Avenue Wealth" className="h-5 w-auto block dark:hidden object-contain" />
+                  <img src="/logo-icon-black.png" alt="Avenue Wealth" className="h-5 w-auto hidden dark:block object-contain" />
                 </div>
                 <div>
                   <h1 className="text-sm font-semibold text-neutral-900 dark:text-white">Avenue Wealth</h1>
@@ -362,7 +370,7 @@ export default function OnboardingModal({
 
               {/* Progress Dots */}
               <div className="flex items-center gap-2">
-                {[1, 2, 3, 4, 5].map((s) => (
+                {[1, 2, 3, 4].map((s) => (
                   <button
                     key={s}
                     onClick={() => s < step && setStep(s)}
@@ -386,131 +394,75 @@ export default function OnboardingModal({
             {/* Step Body */}
             <div className="flex-1 overflow-y-auto px-8 py-6">
               
-              {/* STEP 1: Bienvenida & Idioma / Región */}
+              {/* STEP 1: Iniciar Sesión o Registrarse (Auth) */}
               {step === 1 && (
-                <div className="max-w-xl mx-auto space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="max-w-xl mx-auto space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
                   <div className="text-center space-y-2">
-                    <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
-                      <Globe className="w-7 h-7" />
+                    <div className="flex justify-center pb-1">
+                      <img
+                        src="/logo-black.png"
+                        alt="Avenue Wealth"
+                        className="h-16 w-auto block dark:hidden object-contain"
+                      />
+                      <img
+                        src="/logo-white.png"
+                        alt="Avenue Wealth"
+                        className="h-16 w-auto hidden dark:block object-contain"
+                      />
                     </div>
                     <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-                      Hola. Vamos a empezar con lo básico.
+                      Bienvenido a Avenue Wealth
                     </h2>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                      Personaliza tu entorno de control financiero en Avenue Wealth.
-                    </p>
-                  </div>
-
-                  <div className="space-y-4 pt-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                        ¿Cómo te gustaría que te llamemos?
-                      </label>
-                      <div className="relative">
-                        <User className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3" />
-                        <input
-                          type="text"
-                          value={name}
-                          onChange={(e) => setName(e.target.value)}
-                          placeholder="Tu nombre o alias"
-                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                        Moneda Principal de la Cuenta
-                      </label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[
-                          { code: 'EUR', label: 'Euro', symbol: '€' },
-                          { code: 'USD', label: 'Dólar', symbol: '$' },
-                          { code: 'GBP', label: 'Libra', symbol: '£' },
-                          { code: 'CHF', label: 'Franco', symbol: 'CHF' },
-                        ].map((c) => (
-                          <button
-                            key={c.code}
-                            type="button"
-                            onClick={() => setCurrency(c.code)}
-                            className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
-                              currency === c.code
-                                ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-semibold shadow-xs'
-                                : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 text-neutral-700 dark:text-neutral-300'
-                            }`}
-                          >
-                            <div className="text-base font-bold">{c.symbol}</div>
-                            <div className="text-[11px] text-neutral-500">{c.code}</div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
-                        Idioma de la Aplicación
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { code: 'es', label: 'Español (España)', flag: '🇪🇸' },
-                          { code: 'en', label: 'English (International)', flag: '🇬🇧' },
-                        ].map((lang) => (
-                          <button
-                            key={lang.code}
-                            type="button"
-                            onClick={() => setLanguage(lang.code)}
-                            className={`p-3 rounded-xl border flex items-center space-x-3 transition-all cursor-pointer ${
-                              language === lang.code
-                                ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-semibold shadow-xs'
-                                : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 text-neutral-700 dark:text-neutral-300'
-                            }`}
-                          >
-                            <span className="text-xl">{lang.flag}</span>
-                            <span className="text-xs">{lang.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 2: Registro & Cuenta (Google & Email) */}
-              {step === 2 && (
-                <div className="max-w-xl mx-auto space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                  <div className="text-center space-y-2">
-                    <div className="w-14 h-14 mx-auto rounded-2xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center">
-                      <ShieldCheck className="w-7 h-7" />
-                    </div>
-                    <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-                      Tu cuenta Avenue Wealth
-                    </h2>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                      Inicia sesión para sincronizar tus transacciones y carteras de forma segura.
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 max-w-md mx-auto">
+                      Inicia sesión para entrar directamente a tu panel o crea tu cuenta para comenzar la configuración guiada.
                     </p>
                   </div>
 
                   {sessionUser ? (
-                    <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
-                          {sessionUser.email?.charAt(0).toUpperCase() || 'U'}
-                        </div>
-                        <div>
-                          <div className="text-xs font-semibold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Sesión Iniciada
+                    <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold">
+                            {sessionUser.email?.charAt(0).toUpperCase() || 'U'}
                           </div>
-                          <div className="text-sm text-emerald-700 dark:text-emerald-400 font-mono">
-                            {sessionUser.email}
+                          <div>
+                            <div className="text-xs font-semibold text-emerald-900 dark:text-emerald-200 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Sesión Activa
+                            </div>
+                            <div className="text-sm text-emerald-700 dark:text-emerald-400 font-mono">
+                              {sessionUser.email}
+                            </div>
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => supabase.auth.signOut()}
+                          className="text-xs text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 underline cursor-pointer"
+                        >
+                          Cerrar Sesión
+                        </button>
                       </div>
-                      <button
-                        onClick={() => supabase.auth.signOut()}
-                        className="text-xs text-neutral-500 hover:text-neutral-700 underline cursor-pointer"
-                      >
-                        Cambiar
-                      </button>
+
+                      <div className="pt-2 flex flex-col sm:flex-row gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            localStorage.setItem('spend_agent_onboarding_completed', 'true');
+                            if (onComplete) onComplete();
+                          }}
+                          className="flex-1 py-2.5 px-4 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-bold hover:opacity-90 shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <span>Acceder a Mi Panel</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setStep(2)}
+                          className="py-2.5 px-4 rounded-xl border border-neutral-300 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all cursor-pointer"
+                        >
+                          Configurar perfil
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-4 pt-1">
@@ -541,6 +493,17 @@ export default function OnboardingModal({
                       <div className="flex rounded-xl bg-neutral-100 dark:bg-neutral-800/80 p-1 mb-2">
                         <button
                           type="button"
+                          onClick={() => { setEmailTab('login'); setAuthError(''); }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                            emailTab === 'login'
+                              ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                              : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Iniciar Sesión
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => { setEmailTab('register'); setAuthError(''); }}
                           className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
                             emailTab === 'register'
@@ -550,21 +513,61 @@ export default function OnboardingModal({
                         >
                           Crear Cuenta Nueva
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => { setEmailTab('login'); setAuthError(''); }}
-                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                            emailTab === 'login'
-                              ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
-                              : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
-                          }`}
-                        >
-                          Ya tengo cuenta
-                        </button>
                       </div>
 
-                      {/* Registration Form */}
-                      {emailTab === 'register' ? (
+                      {emailTab === 'login' ? (
+                        /* Login Form */
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                              Correo Electrónico
+                            </label>
+                            <div className="relative">
+                              <Mail className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                              <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="tu@email.com"
+                                className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                              Contraseña
+                            </label>
+                            <div className="relative">
+                              <Lock className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                              <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="••••••••"
+                                className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          {authError && (
+                            <p className="text-xs text-rose-500 font-medium">{authError}</p>
+                          )}
+                          {authSuccess && (
+                            <p className="text-xs text-emerald-500 font-medium">{authSuccess}</p>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleEmailAuth(false)}
+                            disabled={authLoading}
+                            className="w-full py-2.5 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-bold hover:opacity-90 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+                          >
+                            {authLoading ? 'Iniciando sesión...' : 'Iniciar Sesión e Ir al Panel'}
+                          </button>
+                        </div>
+                      ) : (
+                        /* Registration Form */
                         <div className="space-y-3">
                           <div className="grid grid-cols-2 gap-2">
                             <div>
@@ -652,7 +655,7 @@ export default function OnboardingModal({
                           <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 text-[11px] text-blue-800 dark:text-blue-300 flex items-start gap-2">
                             <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                             <span>
-                              <strong>Privacidad garantizada:</strong> Tu contraseña se cifra con hash criptográfico <code>bcrypt</code>. Tus transacciones quedan protegidas mediante Row-Level Security (RLS) en Supabase UE.
+                              <strong>Privacidad garantizada:</strong> Contraseña cifrada con <code>bcrypt</code> y aislamiento RLS multi-inquilino.
                             </span>
                           </div>
 
@@ -669,58 +672,7 @@ export default function OnboardingModal({
                             disabled={authLoading}
                             className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md transition-all active:scale-[0.99] cursor-pointer"
                           >
-                            {authLoading ? 'Creando cuenta segura...' : 'Crear Mi Cuenta Segura'}
-                          </button>
-                        </div>
-                      ) : (
-                        /* Login Form */
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                              Correo Electrónico
-                            </label>
-                            <div className="relative">
-                              <Mail className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
-                              <input
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                placeholder="tu@email.com"
-                                className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                              />
-                            </div>
-                          </div>
-
-                          <div>
-                            <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                              Contraseña
-                            </label>
-                            <div className="relative">
-                              <Lock className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
-                              <input
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                placeholder="••••••••"
-                                className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                              />
-                            </div>
-                          </div>
-
-                          {authError && (
-                            <p className="text-xs text-rose-500 font-medium">{authError}</p>
-                          )}
-                          {authSuccess && (
-                            <p className="text-xs text-emerald-500 font-medium">{authSuccess}</p>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => handleEmailAuth(false)}
-                            disabled={authLoading}
-                            className="w-full py-2.5 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-bold hover:opacity-90 shadow-md transition-all active:scale-[0.99] cursor-pointer"
-                          >
-                            {authLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+                            {authLoading ? 'Creando cuenta...' : 'Crear Cuenta y Continuar'}
                           </button>
                         </div>
                       )}
@@ -731,7 +683,7 @@ export default function OnboardingModal({
                           type="button"
                           onClick={() => {
                             setAuthMode('guest');
-                            setStep(3);
+                            setStep(2);
                           }}
                           className="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer"
                         >
@@ -740,6 +692,112 @@ export default function OnboardingModal({
                       </div>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* STEP 2: Personalización Básica */}
+              {step === 2 && (
+                <div className="max-w-xl mx-auto space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="text-center space-y-2">
+                    <div className="w-14 h-14 mx-auto rounded-2xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
+                      <Globe className="w-7 h-7" />
+                    </div>
+                    <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                      Vamos a personalizar tu entorno
+                    </h2>
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                      Configura tu nombre de visualización, moneda principal e idioma.
+                    </p>
+                  </div>
+
+                  <div className="space-y-4 pt-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                        ¿Cómo te gustaría que te llamemos?
+                      </label>
+                      <div className="relative">
+                        <User className="w-4 h-4 text-neutral-400 absolute left-3.5 top-3" />
+                        <input
+                          type="text"
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                          placeholder="Tu nombre o alias"
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                        Moneda Principal de la Cuenta
+                      </label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { code: 'EUR', label: 'Euro', symbol: '€' },
+                          { code: 'USD', label: 'Dólar', symbol: '$' },
+                          { code: 'GBP', label: 'Libra', symbol: '£' },
+                          { code: 'CHF', label: 'Franco', symbol: 'CHF' },
+                        ].map((c) => (
+                          <button
+                            key={c.code}
+                            type="button"
+                            onClick={() => setCurrency(c.code)}
+                            className={`p-3 rounded-xl border text-center transition-all cursor-pointer ${
+                              currency === c.code
+                                ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-semibold shadow-xs'
+                                : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 text-neutral-700 dark:text-neutral-300'
+                            }`}
+                          >
+                            <div className="text-base font-bold">{c.symbol}</div>
+                            <div className="text-[11px] text-neutral-500">{c.code}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
+                        Idioma de la Aplicación
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { code: 'es', label: 'Español (España)', flag: '🇪🇸' },
+                          { code: 'en', label: 'English (International)', flag: '🇬🇧' },
+                        ].map((lang) => (
+                          <button
+                            key={lang.code}
+                            type="button"
+                            onClick={() => setLanguage(lang.code)}
+                            className={`p-3 rounded-xl border flex items-center space-x-3 transition-all cursor-pointer ${
+                              language === lang.code
+                                ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 font-semibold shadow-xs'
+                                : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 text-neutral-700 dark:text-neutral-300'
+                            }`}
+                          >
+                            <span className="text-xl">{lang.flag}</span>
+                            <span className="text-xs">{lang.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <div className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
+                          <Building2 className="w-4 h-4 text-sky-600" /> Gastos Reembolsables de Empresa
+                        </div>
+                        <p className="text-[11px] text-neutral-500">
+                          Módulo para adelantos con tarjeta corporativa y liquidación automática.
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={enableCompanyExpenses}
+                        onChange={(e) => setEnableCompanyExpenses(e.target.checked)}
+                        className="w-4 h-4 rounded text-blue-600 accent-blue-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -754,7 +812,7 @@ export default function OnboardingModal({
                       Tus Entidades Financieras
                     </h2>
                     <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                      Selecciona los bancos y tarjetas que sueles utilizar para activar sus parsers.
+                      Selecciona los bancos y tarjetas que sueles utilizar para activar sus motores de importación.
                     </p>
                   </div>
 
@@ -795,24 +853,24 @@ export default function OnboardingModal({
                 </div>
               )}
 
-              {/* STEP 4: Hábitos & Metas de Ahorro */}
+              {/* STEP 4: Hábitos de Ahorro y Asistente IA */}
               {step === 4 && (
-                <div className="max-w-xl mx-auto space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                  <div className="text-center space-y-2">
-                    <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-                      <TrendingUp className="w-7 h-7" />
+                <div className="max-w-xl mx-auto space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="text-center space-y-1">
+                    <div className="w-12 h-12 mx-auto rounded-2xl bg-violet-500/10 text-violet-600 flex items-center justify-center">
+                      <Sparkles className="w-6 h-6" />
                     </div>
-                    <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-                      Hábitos Financieros & Metas
+                    <h2 className="text-xl font-bold tracking-tight text-neutral-900 dark:text-white">
+                      Hábitos Financieros y Asistente IA
                     </h2>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                      Define tus metas mensuales para activar los pronósticos y alertas de gasto.
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                      Define tus metas iniciales y elige el motor de inteligencia analítica para comenzar.
                     </p>
                   </div>
 
-                  <div className="space-y-5 pt-2">
+                  <div className="space-y-4 pt-1">
                     <div>
-                      <div className="flex justify-between items-center mb-1.5">
+                      <div className="flex justify-between items-center mb-1">
                         <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                           Ingresos Mensuales Estimados
                         </label>
@@ -832,7 +890,7 @@ export default function OnboardingModal({
                     </div>
 
                     <div>
-                      <div className="flex justify-between items-center mb-1.5">
+                      <div className="flex justify-between items-center mb-1">
                         <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300">
                           Meta de Ahorro Mensual
                         </label>
@@ -849,100 +907,69 @@ export default function OnboardingModal({
                         onChange={(e) => setTargetSavingsPct(Number(e.target.value))}
                         className="w-full accent-emerald-600 cursor-pointer"
                       />
-                      <div className="flex justify-between text-[10px] text-neutral-400 mt-1">
+                      <div className="flex justify-between text-[10px] text-neutral-400 mt-0.5">
                         <span>Conservador (10%)</span>
                         <span>Equilibrado (20%)</span>
                         <span>Frugal (40%+)</span>
                       </div>
                     </div>
 
-                    <div className="p-3.5 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50/50 dark:bg-neutral-900/50 flex items-center justify-between">
-                      <div className="space-y-0.5">
-                        <div className="text-xs font-semibold text-neutral-800 dark:text-neutral-200 flex items-center gap-1.5">
-                          <Building2 className="w-4 h-4 text-sky-600" /> Gastos Reembolsables de Empresa
-                        </div>
-                        <p className="text-[11px] text-neutral-500">
-                          Módulo para adelantos con tarjeta corporativa y liquidación automática.
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={enableCompanyExpenses}
-                        onChange={(e) => setEnableCompanyExpenses(e.target.checked)}
-                        className="w-4 h-4 rounded text-blue-600 accent-blue-600 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 5: Asistente IA */}
-              {step === 5 && (
-                <div className="max-w-xl mx-auto space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                  <div className="text-center space-y-2">
-                    <div className="w-14 h-14 mx-auto rounded-2xl bg-violet-500/10 text-violet-600 flex items-center justify-center">
-                      <Sparkles className="w-7 h-7" />
-                    </div>
-                    <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
-                      Asistente Inteligente & Privacidad
-                    </h2>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400">
-                      Tus transacciones se procesan 100% en memoria RAM sin persistencia en disco duro.
-                    </p>
-                  </div>
-
-                  <div className="space-y-3 pt-2">
-                    <div 
-                      onClick={() => setAiEnabled(true)}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                        aiEnabled
-                          ? 'border-violet-600 bg-violet-50/60 dark:bg-violet-950/40 shadow-xs'
-                          : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="text-sm font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-violet-600" /> Analista DeepSeek & Motor Predictivo
+                    <div className="space-y-2 pt-1">
+                      <label className="text-xs font-semibold text-neutral-700 dark:text-neutral-300 block">
+                        Motor de Inteligencia Artificial
+                      </label>
+                      <div 
+                        onClick={() => setAiEnabled(true)}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                          aiEnabled
+                            ? 'border-violet-600 bg-violet-50/60 dark:bg-violet-950/40 shadow-xs'
+                            : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-0.5">
+                            <div className="text-xs font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
+                              <Zap className="w-3.5 h-3.5 text-violet-600" /> Analista DeepSeek & Motor Predictivo
+                            </div>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                              Categorización inteligente, detección de transferencias internas y recomendaciones.
+                            </p>
                           </div>
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                            Categorización contextual, detección de transferencias internas y recomendaciones financieras inteligentes.
-                          </p>
+                          <input
+                            type="radio"
+                            name="ai_option"
+                            checked={aiEnabled}
+                            onChange={() => setAiEnabled(true)}
+                            className="accent-violet-600 mt-1 cursor-pointer"
+                          />
                         </div>
-                        <input
-                          type="radio"
-                          name="ai_option"
-                          checked={aiEnabled}
-                          onChange={() => setAiEnabled(true)}
-                          className="accent-violet-600 mt-1 cursor-pointer"
-                        />
                       </div>
-                    </div>
 
-                    <div 
-                      onClick={() => setAiEnabled(false)}
-                      className={`p-4 rounded-2xl border transition-all cursor-pointer ${
-                        !aiEnabled
-                          ? 'border-neutral-800 dark:border-neutral-200 bg-neutral-100 dark:bg-neutral-800/60 shadow-xs'
-                          : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="text-sm font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
-                            <Lock className="w-4 h-4 text-neutral-600" /> Modo Algorítmico Puro
+                      <div 
+                        onClick={() => setAiEnabled(false)}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                          !aiEnabled
+                            ? 'border-neutral-800 dark:border-neutral-200 bg-neutral-100 dark:bg-neutral-800/60 shadow-xs'
+                            : 'border-neutral-200 dark:border-neutral-800 hover:border-neutral-300'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-0.5">
+                            <div className="text-xs font-semibold text-neutral-900 dark:text-white flex items-center gap-2">
+                              <Lock className="w-3.5 h-3.5 text-neutral-600" /> Modo Algorítmico Puro
+                            </div>
+                            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                              Opera únicamente con reglas deterministas sin llamadas a modelos externos.
+                            </p>
                           </div>
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400">
-                            Funciona únicamente con reglas deterministas locales sin consultar modelos de IA externos.
-                          </p>
+                          <input
+                            type="radio"
+                            name="ai_option"
+                            checked={!aiEnabled}
+                            onChange={() => setAiEnabled(false)}
+                            className="accent-neutral-600 mt-1 cursor-pointer"
+                          />
                         </div>
-                        <input
-                          type="radio"
-                          name="ai_option"
-                          checked={!aiEnabled}
-                          onChange={() => setAiEnabled(false)}
-                          className="accent-neutral-600 mt-1 cursor-pointer"
-                        />
                       </div>
                     </div>
                   </div>
@@ -967,7 +994,7 @@ export default function OnboardingModal({
               )}
 
               <div className="flex items-center space-x-3">
-                {step < totalSteps ? (
+                {step > 1 && step < totalSteps && (
                   <button
                     type="button"
                     onClick={() => setStep(step + 1)}
@@ -976,14 +1003,15 @@ export default function OnboardingModal({
                     <span>Siguiente</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
-                ) : (
+                )}
+                {step === totalSteps && (
                   <button
                     type="button"
                     onClick={handleFinalize}
                     className="flex items-center space-x-2 px-7 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold shadow-lg shadow-blue-500/25 transition-all active:scale-95 cursor-pointer"
                   >
                     <Sparkles className="w-4 h-4" />
-                    <span>Empezar Experiencia</span>
+                    <span>Comenzar a usar Avenue Wealth</span>
                   </button>
                 )}
               </div>

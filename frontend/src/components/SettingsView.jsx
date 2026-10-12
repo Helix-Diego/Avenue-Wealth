@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase, authFetch } from '../supabaseClient';
 import {
   Sparkles,
   Bot,
@@ -53,8 +54,7 @@ export default function SettingsView({
   onSettingsUpdated, 
   darkMode, 
   isOnboarding = false, 
-  onCompleteOnboarding,
-  onOpenOnboarding
+  onCompleteOnboarding
 }) {
   const [activeSubTab, setActiveSubTab] = useState('ai'); // 'ai' | 'categories' | 'banks' | 'general'
   
@@ -108,6 +108,11 @@ export default function SettingsView({
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [resettingData, setResettingData] = useState(false);
   const [resetSuccessMessage, setResetSuccessMessage] = useState(null);
+
+  // Danger Zone Delete Account State
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // Backup & Storage State
   const [backupInfo, setBackupInfo] = useState(null);
@@ -455,6 +460,32 @@ export default function SettingsView({
       alert('Error al reiniciar los datos: ' + err.message);
     } finally {
       setResettingData(false);
+    }
+  };
+
+  // --- Handlers: Delete Account ---
+  const handleExecuteDeleteAccount = async () => {
+    if (deleteConfirmText.trim().toUpperCase() !== 'ELIMINAR') {
+      alert('Por favor escribe ELIMINAR para confirmar la baja definitiva.');
+      return;
+    }
+    setDeletingAccount(true);
+    try {
+      const res = await authFetch('/api/auth/me', {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || 'Error al eliminar la cuenta');
+      }
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {}
+      localStorage.clear();
+      window.location.href = '/';
+    } catch (err) {
+      alert('Error al eliminar la cuenta: ' + err.message);
+      setDeletingAccount(false);
     }
   };
 
@@ -1295,33 +1326,6 @@ export default function SettingsView({
             </div>
           </form>
 
-          {/* Windows 11 Onboarding Setup Card */}
-          <div className="p-6 rounded-xl bg-gradient-to-r from-blue-50/70 to-indigo-50/70 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200/80 dark:border-blue-900/40 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                <h3 className="text-sm font-bold text-neutral-900 dark:text-white">
-                  Asistente de Bienvenida (Estilo Windows 11)
-                </h3>
-              </div>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                OOBE Wizard
-              </span>
-            </div>
-            <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
-              Vuelve a lanzar la pantalla de configuración guiada interactiva para ajustar tu nombre, vincular tu cuenta con Google, activar entidades bancarias o definir tus metas mensuales de ahorro.
-            </p>
-            <div>
-              <button
-                type="button"
-                onClick={onOpenOnboarding}
-                className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs transition-all cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Relanzar Asistente de Inicio</span>
-              </button>
-            </div>
-          </div>
 
           {/* Database Storage & Backups Card */}
           <div className="p-6 rounded-xl bg-white dark:bg-[#242424] border border-[#e5e5e3] dark:border-[#353535] shadow-xs space-y-4">
@@ -1403,24 +1407,51 @@ export default function SettingsView({
             </div>
           </div>
 
-          {/* Danger Zone: Reset Data */}
-          <div className="p-6 rounded-xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-3">
+          {/* Danger Zone: Reset Data & Delete Account */}
+          <div className="p-6 rounded-xl bg-rose-50/40 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/60 shadow-xs space-y-5">
             <div className="flex items-center space-x-2 text-rose-700 dark:text-rose-400">
               <AlertTriangle className="w-4 h-4" />
               <h3 className="text-xs font-bold uppercase tracking-wider">Zona de Peligro</h3>
             </div>
-            <p className="text-xs text-neutral-600 dark:text-neutral-300">
-              Si deseas reiniciar el libro de cuentas para un usuario nuevo, puedes vaciar todas las transacciones, balances de cuentas, préstamos y aportaciones. Tu configuración de categorías y clave de IA se conservarán.
-            </p>
 
-            <button
-              type="button"
-              onClick={() => setIsResetConfirmOpen(true)}
-              className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors cursor-pointer shadow-xs"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Vaciar Transacciones y Datos</span>
-            </button>
+            {/* Reset data */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-neutral-800 dark:text-neutral-200">
+                Vaciar transacciones y mantener ajustes
+              </h4>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                Si deseas reiniciar el libro de cuentas para un usuario nuevo, puedes vaciar todas las transacciones, balances de cuentas, préstamos y aportaciones. Tu configuración de categorías y clave de IA se conservarán.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsResetConfirmOpen(true)}
+                className="inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 transition-colors cursor-pointer shadow-xs"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Vaciar Transacciones y Datos</span>
+              </button>
+            </div>
+
+            {/* Delete Account */}
+            <div className="border-t border-rose-200/80 dark:border-rose-900/50 pt-4 space-y-2">
+              <h4 className="text-xs font-bold text-rose-700 dark:text-rose-400">
+                Eliminar cuenta permanentemente
+              </h4>
+              <p className="text-xs text-neutral-600 dark:text-neutral-400 leading-relaxed">
+                Elimina permanentemente tu usuario, credenciales, transacciones, cuentas vinculadas y toda tu información personal de los servidores de Avenue Wealth. Esta acción es <strong>100% irreversible</strong> y no se puede deshacer.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteConfirmText('');
+                  setIsDeleteAccountModalOpen(true);
+                }}
+                className="inline-flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-neutral-900 hover:bg-rose-700 dark:bg-neutral-800 dark:hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-xs"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                <span>Borrar Mi Cuenta Permanentemente</span>
+              </button>
+            </div>
           </div>
 
           {/* Reset Confirmation Modal */}
@@ -1465,28 +1496,69 @@ export default function SettingsView({
               </div>
             </div>
           )}
-        </div>
-      )}
 
-      {/* Onboarding Sticky Bottom Action Bar */}
-      {isOnboarding && onCompleteOnboarding && (
-        <div className="sticky bottom-4 p-4 rounded-xl bg-white/95 dark:bg-[#202020]/95 backdrop-blur-md border border-indigo-300 dark:border-indigo-700 shadow-xl flex items-center justify-between z-20 transition-all">
-          <div>
-            <h4 className="text-xs font-bold text-neutral-900 dark:text-white flex items-center gap-1.5">
-              <span>✨</span> ¿Listo con tu configuración inicial?
-            </h4>
-            <p className="text-[11px] text-neutral-500">
-              Al hacer clic irás a tu espacio de trabajo y podrás empezar a importar tus extractos.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onCompleteOnboarding}
-            className="px-5 py-2.5 text-xs font-bold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-md flex items-center gap-2 cursor-pointer transition-all hover:scale-[1.02]"
-          >
-            <span>Guardar y Comenzar</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          {/* Delete Account Confirmation Modal */}
+          {isDeleteAccountModalOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+              <div className="bg-white dark:bg-[#222] p-6 rounded-2xl border border-rose-300 dark:border-rose-800/80 max-w-md w-full space-y-4 shadow-2xl">
+                <div className="flex items-center space-x-3 text-rose-600 font-bold text-sm">
+                  <div className="w-9 h-9 rounded-full bg-rose-100 dark:bg-rose-950/50 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-neutral-900 dark:text-white">¿Eliminar tu cuenta por completo?</h3>
+                    <p className="text-[11px] text-rose-600 font-normal">Acción destructiva e irreversible</p>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-800 dark:text-rose-200 leading-relaxed">
+                  Se eliminarán permanentemente todas tus transacciones, entidades bancarias, préstamos, cartera de inversión, reglas y credenciales de acceso de Avenue Wealth.
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300">
+                    Escribe <span className="font-mono text-rose-600 font-bold">ELIMINAR</span> para confirmar:
+                  </label>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="ELIMINAR"
+                    className="w-full px-3 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-xs font-mono focus:ring-2 focus:ring-rose-500 outline-none"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsDeleteAccountModalOpen(false)}
+                    disabled={deletingAccount}
+                    className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExecuteDeleteAccount}
+                    disabled={deletingAccount || deleteConfirmText.trim().toUpperCase() !== 'ELIMINAR'}
+                    className="inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-xs disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    {deletingAccount ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Eliminando cuenta...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Eliminar Mi Cuenta Definitivamente</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

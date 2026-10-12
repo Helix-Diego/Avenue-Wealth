@@ -71,15 +71,16 @@ export default function Sidebar({
         {/* Workspace Brand Header */}
         <div className="px-4 py-4 border-b border-[#ececeb] dark:border-[#2f2f2f]">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white dark:bg-white dark:text-neutral-900 flex items-center justify-center font-bold text-sm shadow-sm">
-              🏦
+            <div className="w-9 h-9 rounded-xl bg-white dark:bg-[#1a1a1a] border border-[#e5e5e3] dark:border-[#333333] flex items-center justify-center p-1 shadow-2xs flex-shrink-0">
+              <img src="/logo-icon-black.png" alt="Avenue Wealth" className="w-7 h-7 object-contain dark:hidden" />
+              <img src="/logo-icon-white.png" alt="Avenue Wealth" className="w-7 h-7 object-contain hidden dark:block" />
             </div>
             <div className="truncate">
-              <h1 className="text-sm font-semibold tracking-tight text-[#37352f] dark:text-[#ebebeb] truncate">
-                {userName || 'Spend Agent'}
+              <h1 className="text-sm font-bold tracking-tight text-[#37352f] dark:text-[#ebebeb] truncate">
+                Avenue Wealth
               </h1>
-              <p className="text-[11px] text-[#787774] dark:text-[#9b9b9b] truncate">
-                Control Financiero • IA
+              <p className="text-[10px] uppercase tracking-wider font-semibold text-[#787774] dark:text-[#9b9b9b] truncate">
+                {userName || 'Finance & AI'}
               </p>
             </div>
           </div>
