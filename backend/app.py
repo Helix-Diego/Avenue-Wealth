@@ -70,6 +70,16 @@ app.add_middleware(
 def on_startup():
     init_db()
     init_knowledge_base()
+    # Purge legacy unassigned or leaked transactions on cloud deployment (Render)
+    if os.environ.get("RENDER"):
+        try:
+            conn = get_connection()
+            conn.execute("DELETE FROM transactions WHERE user_id = '00000000-0000-0000-0000-000000000000' OR user_id IS NULL")
+            conn.commit()
+            conn.close()
+            print("Purged legacy transactions with unassigned user_id on Render.")
+        except Exception as e:
+            print(f"Notice purging legacy transactions: {e}")
 
 # --- Pydantic Models ---
 class TransactionCreate(BaseModel):
@@ -491,15 +501,15 @@ def get_summary(
     cursor = conn.cursor()
 
     # Doubts count
-    cursor.execute("SELECT COUNT(*) FROM transactions WHERE needs_clarification = 1 AND (user_id = ? OR user_id IS NULL)", (current_user.id,))
+    cursor.execute("SELECT COUNT(*) FROM transactions WHERE needs_clarification = 1 AND user_id = ?", (current_user.id,))
     pending_doubts_count = cursor.fetchone()[0]
 
     # Available distinct months in DB
-    cursor.execute("SELECT DISTINCT substr(date, 1, 7) as ym FROM transactions WHERE (user_id = ? OR user_id IS NULL) ORDER BY ym DESC", (current_user.id,))
+    cursor.execute("SELECT DISTINCT substr(date, 1, 7) as ym FROM transactions WHERE user_id = ? ORDER BY ym DESC", (current_user.id,))
     available_months = [r["ym"] for r in cursor.fetchall() if r["ym"]]
 
     # Available distinct accounts in DB
-    cursor.execute("SELECT DISTINCT account FROM transactions WHERE (user_id = ? OR user_id IS NULL) ORDER BY account ASC", (current_user.id,))
+    cursor.execute("SELECT DISTINCT account FROM transactions WHERE user_id = ? ORDER BY account ASC", (current_user.id,))
     available_accounts = [r["account"] for r in cursor.fetchall() if r["account"]]
 
     cursor.execute("SELECT id, name, alias, enabled FROM supported_banks ORDER BY name ASC")
@@ -535,7 +545,7 @@ def get_transactions(
     SELECT t.*, l.name as loan_name, l.loan_type as loan_type
     FROM transactions t
     LEFT JOIN loans l ON t.loan_id = l.id
-    WHERE (t.user_id = ? OR t.user_id IS NULL)
+    WHERE t.user_id = ?
     """
     params = [current_user.id]
 
@@ -674,7 +684,7 @@ def update_transaction(tx_id: int, update: TransactionUpdate, current_user: User
         return {"status": "no change"}
 
     params.extend([tx_id, current_user.id])
-    cursor.execute(f"UPDATE transactions SET {', '.join(updates)} WHERE id = ? AND (user_id = ? OR user_id IS NULL)", params)
+    cursor.execute(f"UPDATE transactions SET {', '.join(updates)} WHERE id = ? AND user_id = ?", params)
     conn.commit()
     conn.close()
 
@@ -684,17 +694,17 @@ def update_transaction(tx_id: int, update: TransactionUpdate, current_user: User
 def delete_transaction(tx_id: int, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM transactions WHERE id = ? AND (user_id = ? OR user_id IS NULL)", (tx_id, current_user.id))
+    cursor.execute("DELETE FROM transactions WHERE id = ? AND user_id = ?", (tx_id, current_user.id))
     conn.commit()
     conn.close()
     return {"status": "deleted", "id": tx_id}
 
 @app.post("/api/transactions/find-similar")
-def find_similar_transactions(req: FindSimilarRequest):
+def find_similar_transactions(req: FindSimilarRequest, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM transactions WHERE id = ?", (req.transaction_id,))
+    cursor.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (req.transaction_id, current_user.id))
     target_row = cursor.fetchone()
     if not target_row:
         conn.close()
@@ -718,6 +728,7 @@ def find_similar_transactions(req: FindSimilarRequest):
     SELECT id, date, description, amount, category, account, is_reimbursable, reimbursement_status
     FROM transactions
     WHERE id != ?
+      AND user_id = ?
       AND category != ?
       AND (
         UPPER(description) LIKE UPPER(?)
@@ -725,7 +736,7 @@ def find_similar_transactions(req: FindSimilarRequest):
       )
     ORDER BY date DESC
     LIMIT 60
-    """, (req.transaction_id, req.new_category, search_term, search_term))
+    """, (req.transaction_id, current_user.id, req.new_category, search_term, search_term))
 
     matches = [dict(r) for r in cursor.fetchall()]
     conn.close()
@@ -739,7 +750,7 @@ def find_similar_transactions(req: FindSimilarRequest):
     }
 
 @app.post("/api/transactions/batch-update-category")
-def batch_update_category(req: BatchUpdateCategoryRequest):
+def batch_update_category(req: BatchUpdateCategoryRequest, current_user: User = Depends(get_current_user)):
     if not req.transaction_ids:
         return {"status": "no transactions provided", "updated_count": 0, "previous_states": []}
 
@@ -752,8 +763,8 @@ def batch_update_category(req: BatchUpdateCategoryRequest):
     cursor.execute(f"""
         SELECT id, category, is_reimbursable, reimbursement_status, notes, loan_id 
         FROM transactions 
-        WHERE id IN ({placeholders})
-    """, req.transaction_ids)
+        WHERE id IN ({placeholders}) AND user_id = ?
+    """, req.transaction_ids + [current_user.id])
     previous_states = [dict(r) for r in cursor.fetchall()]
 
     is_company = 1 if req.new_category == "Gastos de Empresa" else 0
@@ -774,8 +785,8 @@ def batch_update_category(req: BatchUpdateCategoryRequest):
     cursor.execute(f"""
     UPDATE transactions
     SET {', '.join(sql_updates)}
-    WHERE id IN ({placeholders})
-    """, sql_params + req.transaction_ids)
+    WHERE id IN ({placeholders}) AND user_id = ?
+    """, sql_params + req.transaction_ids + [current_user.id])
     updated_count = cursor.rowcount
 
     # If save_rule is true and we have a valid pattern
@@ -811,7 +822,7 @@ def batch_update_category(req: BatchUpdateCategoryRequest):
     }
 
 @app.post("/api/transactions/batch-update-reimbursable")
-def batch_update_reimbursable(req: BatchUpdateReimbursableRequest):
+def batch_update_reimbursable(req: BatchUpdateReimbursableRequest, current_user: User = Depends(get_current_user)):
     if not req.transaction_ids:
         return {"status": "no transactions provided", "updated_count": 0, "previous_states": []}
 
@@ -823,8 +834,8 @@ def batch_update_reimbursable(req: BatchUpdateReimbursableRequest):
     cursor.execute(f"""
         SELECT id, category, is_reimbursable, reimbursement_status, notes, loan_id 
         FROM transactions 
-        WHERE id IN ({placeholders})
-    """, req.transaction_ids)
+        WHERE id IN ({placeholders}) AND user_id = ?
+    """, req.transaction_ids + [current_user.id])
     previous_states = [dict(r) for r in cursor.fetchall()]
 
     status = req.reimbursement_status if req.reimbursement_status else ("pending" if req.is_reimbursable == 1 else "none")
@@ -833,8 +844,8 @@ def batch_update_reimbursable(req: BatchUpdateReimbursableRequest):
     UPDATE transactions
     SET is_reimbursable = ?,
         reimbursement_status = ?
-    WHERE id IN ({placeholders})
-    """, [req.is_reimbursable, status] + req.transaction_ids)
+    WHERE id IN ({placeholders}) AND user_id = ?
+    """, [req.is_reimbursable, status] + req.transaction_ids + [current_user.id])
     updated_count = cursor.rowcount
     conn.commit()
     conn.close()
@@ -846,7 +857,7 @@ def batch_update_reimbursable(req: BatchUpdateReimbursableRequest):
     }
 
 @app.post("/api/transactions/batch-delete")
-def batch_delete_transactions(req: BatchDeleteRequest):
+def batch_delete_transactions(req: BatchDeleteRequest, current_user: User = Depends(get_current_user)):
     if not req.transaction_ids:
         return {"status": "no transactions provided", "deleted_count": 0, "deleted_transactions": []}
 
@@ -855,10 +866,10 @@ def batch_delete_transactions(req: BatchDeleteRequest):
     placeholders = ",".join("?" for _ in req.transaction_ids)
 
     # 1. Capture full transaction rows before deletion for undo
-    cursor.execute(f"SELECT * FROM transactions WHERE id IN ({placeholders})", req.transaction_ids)
+    cursor.execute(f"SELECT * FROM transactions WHERE id IN ({placeholders}) AND user_id = ?", req.transaction_ids + [current_user.id])
     deleted_transactions = [dict(r) for r in cursor.fetchall()]
 
-    cursor.execute(f"DELETE FROM transactions WHERE id IN ({placeholders})", req.transaction_ids)
+    cursor.execute(f"DELETE FROM transactions WHERE id IN ({placeholders}) AND user_id = ?", req.transaction_ids + [current_user.id])
     deleted_count = cursor.rowcount
     conn.commit()
     conn.close()
@@ -870,7 +881,7 @@ def batch_delete_transactions(req: BatchDeleteRequest):
     }
 
 @app.post("/api/transactions/batch-undo")
-def batch_undo_action(req: BatchUndoRequest):
+def batch_undo_action(req: BatchUndoRequest, current_user: User = Depends(get_current_user)):
     """
     Rolls back batch modifications or bulk recommendation applications.
     """
@@ -890,30 +901,32 @@ def batch_undo_action(req: BatchUndoRequest):
                 reimbursement_status = ?,
                 notes = ?,
                 loan_id = ?
-            WHERE id = ?
+            WHERE id = ? AND user_id = ?
             """, (
                 prev.get("category"),
                 prev.get("is_reimbursable", 0),
                 prev.get("reimbursement_status", "none"),
                 prev.get("notes"),
                 prev.get("loan_id"),
-                tx_id
+                tx_id,
+                current_user.id
             ))
             restored_count += cursor.rowcount
 
         # If a rule pattern was learned as part of this batch, delete it so it doesn't linger
         if req.rule_pattern and len(req.rule_pattern.strip()) >= 3:
             clean_pat = req.rule_pattern.strip().upper()
-            cursor.execute("DELETE FROM category_rules WHERE pattern = ?", (clean_pat,))
+            cursor.execute("DELETE FROM category_rules WHERE pattern = ? AND user_id = ?", (clean_pat, current_user.id))
             cursor.execute("DELETE FROM knowledge_base WHERE pattern = ?", (clean_pat,))
 
     elif req.action_type == "delete" and req.deleted_transactions:
         for tx in req.deleted_transactions:
             cursor.execute("""
-            INSERT OR REPLACE INTO transactions (id, date, account, description, amount, category, is_reimbursable, reimbursement_status, notes, needs_clarification, loan_id, balance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO transactions (id, user_id, date, account, description, amount, category, is_reimbursable, reimbursement_status, notes, needs_clarification, loan_id, balance)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 tx.get("id"),
+                current_user.id,
                 tx.get("date"),
                 tx.get("account"),
                 tx.get("description"),
@@ -954,10 +967,10 @@ def api_unpair_transfer(req: UnpairTransferRequest):
     return res
 
 @app.get("/api/transactions/{tx_id}/linked-pair")
-def api_get_linked_pair(tx_id: int):
+def api_get_linked_pair(tx_id: int, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,))
+    cursor.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (tx_id, current_user.id))
     tx_row = cursor.fetchone()
     if not tx_row:
         conn.close()
@@ -974,7 +987,7 @@ def api_get_linked_pair(tx_id: int):
             "message": "Esta transacción no está vinculada a ningún traspaso."
         }
         
-    cursor.execute("SELECT * FROM transactions WHERE id = ?", (linked_id,))
+    cursor.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (linked_id, current_user.id))
     linked_row = cursor.fetchone()
     conn.close()
 
@@ -1012,14 +1025,14 @@ def api_get_linked_pair(tx_id: int):
 
 
 @app.post("/api/transactions/split")
-def api_split_transaction(req: SplitTransactionRequest):
+def api_split_transaction(req: SplitTransactionRequest, current_user: User = Depends(get_current_user)):
     if len(req.splits) < 2:
         raise HTTPException(status_code=400, detail="El desglose requiere al menos 2 partes.")
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM transactions WHERE id = ?", (req.transaction_id,))
+    cursor.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (req.transaction_id, current_user.id))
     tx_row = cursor.fetchone()
     if not tx_row:
         conn.close()
@@ -1061,8 +1074,8 @@ def api_split_transaction(req: SplitTransactionRequest):
         reimbursement_status = ?,
         needs_clarification = 0,
         notes = ?
-    WHERE id = ?
-    """, (s0.amount, s0.category, s0_is_reimb, s0_status, s0_notes_full, orig["id"]))
+    WHERE id = ? AND user_id = ?
+    """, (s0.amount, s0.category, s0_is_reimb, s0_status, s0_notes_full, orig["id"], current_user.id))
 
     created_ids = [orig["id"]]
 
@@ -1075,11 +1088,12 @@ def api_split_transaction(req: SplitTransactionRequest):
 
         cursor.execute("""
         INSERT INTO transactions (
-            date, account, description, raw_description, amount, currency,
+            user_id, date, account, description, raw_description, amount, currency,
             category, is_reimbursable, reimbursement_status, needs_clarification,
             confidence, notes, parent_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1.0, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1.0, ?, ?)
         """, (
+            current_user.id,
             orig["date"],
             orig["account"],
             f"{orig['description']} (Desglose {i}/{len(req.splits)})",
@@ -1107,14 +1121,14 @@ def api_split_transaction(req: SplitTransactionRequest):
 # --- Agent Clarifications Queue ---
 
 @app.get("/api/clarifications")
-def get_clarifications():
+def get_clarifications(current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
     SELECT * FROM transactions
-    WHERE needs_clarification = 1
+    WHERE needs_clarification = 1 AND user_id = ?
     ORDER BY date DESC
-    """)
+    """, (current_user.id,))
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
 
@@ -1125,11 +1139,11 @@ def get_clarifications():
     }
 
 @app.post("/api/clarifications/resolve")
-def resolve_clarification(req: ResolveClarificationRequest):
+def resolve_clarification(req: ResolveClarificationRequest, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM transactions WHERE id = ?", (req.transaction_id,))
+    cursor.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (req.transaction_id, current_user.id))
     tx = cursor.fetchone()
     if not tx:
         conn.close()
@@ -1146,8 +1160,8 @@ def resolve_clarification(req: ResolveClarificationRequest):
         needs_clarification = 0,
         confidence = 1.0,
         notes = coalesce(notes, '') || ' [Confirmado por el usuario]'
-    WHERE id = ?
-    """, (req.category, is_reimb_int, reimb_status, req.transaction_id))
+    WHERE id = ? AND user_id = ?
+    """, (req.category, is_reimb_int, reimb_status, req.transaction_id, current_user.id))
 
     conn.commit()
     conn.close()
@@ -1176,22 +1190,22 @@ def resolve_clarification(req: ResolveClarificationRequest):
 # --- Company Expenses & Reimbursements ---
 
 @app.get("/api/company-expenses")
-def get_company_expenses():
+def get_company_expenses(current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
     SELECT * FROM transactions
-    WHERE is_reimbursable = 1
+    WHERE is_reimbursable = 1 AND user_id = ?
     ORDER BY date DESC
-    """)
+    """, (current_user.id,))
     reimbursable_txs = [dict(r) for r in cursor.fetchall()]
 
     cursor.execute("""
     SELECT * FROM transactions
-    WHERE amount > 0 AND (category = 'Gastos de Empresa' OR description LIKE '%reembolso%' OR description LIKE '%expenses%' OR description LIKE '%meeting%')
+    WHERE amount > 0 AND user_id = ? AND (category = 'Gastos de Empresa' OR description LIKE '%reembolso%' OR description LIKE '%expenses%' OR description LIKE '%meeting%')
     ORDER BY date DESC
-    """)
+    """, (current_user.id,))
     settlement_txs = [dict(r) for r in cursor.fetchall()]
 
     total_paid_out = sum(abs(t["amount"]) for t in reimbursable_txs)
@@ -1209,41 +1223,41 @@ def get_company_expenses():
     }
 
 @app.post("/api/company-expenses/settle-all")
-def settle_all_company_expenses():
+def settle_all_company_expenses(current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
     UPDATE transactions
     SET reimbursement_status = 'reimbursed'
-    WHERE is_reimbursable = 1 AND reimbursement_status = 'pending'
-    """)
+    WHERE is_reimbursable = 1 AND reimbursement_status = 'pending' AND user_id = ?
+    """, (current_user.id,))
     updated = cursor.rowcount
     conn.commit()
     conn.close()
     return {"status": "settled", "count": updated}
 
 @app.get("/api/company-expenses/pending-expenses")
-def get_pending_company_expenses():
+def get_pending_company_expenses(current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
     SELECT * FROM transactions
-    WHERE is_reimbursable = 1 AND reimbursement_status = 'pending'
+    WHERE is_reimbursable = 1 AND reimbursement_status = 'pending' AND user_id = ?
     ORDER BY date DESC
-    """)
+    """, (current_user.id,))
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return {"pending_expenses": rows, "count": len(rows)}
 
 @app.post("/api/company-expenses/link-reimbursement")
-def link_reimbursement(req: LinkReimbursementRequest):
+def link_reimbursement(req: LinkReimbursementRequest, current_user: User = Depends(get_current_user)):
     if not req.expense_ids:
         raise HTTPException(status_code=400, detail="Debes seleccionar al menos un gasto para vincular.")
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM transactions WHERE id = ?", (req.settlement_id,))
+    cursor.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (req.settlement_id, current_user.id))
     settlement = cursor.fetchone()
     if not settlement:
         conn.close()
@@ -1254,15 +1268,15 @@ def link_reimbursement(req: LinkReimbursementRequest):
     UPDATE transactions
     SET reimbursement_status = 'reimbursed',
         linked_tx_id = ?
-    WHERE id IN ({placeholders})
-    """, [req.settlement_id] + req.expense_ids)
+    WHERE id IN ({placeholders}) AND user_id = ?
+    """, [req.settlement_id] + req.expense_ids + [current_user.id])
     linked_count = cursor.rowcount
 
     cursor.execute("""
     UPDATE transactions
     SET notes = coalesce(notes, '') || ' [Gastos vinculados: ' || ? || ']'
-    WHERE id = ?
-    """, (str(linked_count), req.settlement_id))
+    WHERE id = ? AND user_id = ?
+    """, (str(linked_count), req.settlement_id, current_user.id))
 
     conn.commit()
     conn.close()
@@ -1386,30 +1400,30 @@ def add_msci_contribution_legacy(req: MSCIContributionRequest):
     )
 
 @app.get("/api/accounts")
-def get_accounts():
+def get_accounts(current_user: User = Depends(get_current_user)):
     conn = get_connection()
-    sync_realtime_account_balances(conn)
+    sync_realtime_account_balances(conn, user_id=current_user.id)
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM bank_accounts ORDER BY is_credit_card ASC, current_balance DESC")
+    cursor.execute("SELECT * FROM bank_accounts WHERE user_id = ? ORDER BY is_credit_card ASC, current_balance DESC", (current_user.id,))
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return {"accounts": rows}
 
 @app.post("/api/accounts/balance")
-def update_account_balance(req: AccountBalanceUpdate):
+def update_account_balance(req: AccountBalanceUpdate, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
-    cursor.execute("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE account = ?", (req.account_name,))
+    cursor.execute("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE account = ? AND user_id = ?", (req.account_name, current_user.id))
     tx_sum = float(cursor.fetchone()[0] or 0.0)
     adjusted_initial = req.balance - tx_sum
     cursor.execute("""
     UPDATE bank_accounts
     SET initial_balance = ?, current_balance = ?, last_imported_at = ?, notes = coalesce(?, notes)
-    WHERE account_name = ?
-    """, (adjusted_initial, req.balance, now, req.notes, req.account_name))
+    WHERE account_name = ? AND user_id = ?
+    """, (adjusted_initial, req.balance, now, req.notes, req.account_name, current_user.id))
     conn.commit()
-    sync_realtime_account_balances(conn)
+    sync_realtime_account_balances(conn, user_id=current_user.id)
     conn.close()
     return {"status": "updated", "account": req.account_name, "balance": req.balance}
 
@@ -1612,7 +1626,7 @@ def unlink_transactions_from_loan(loan_id: int, req: LinkLoanTransactionsRequest
     return get_loans_summary()
 
 @app.get("/api/loans/search-candidates")
-def search_loan_candidates(q: str = "", limit: int = 60):
+def search_loan_candidates(q: str = "", limit: int = 60, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     if q and q.strip():
@@ -1621,16 +1635,17 @@ def search_loan_candidates(q: str = "", limit: int = 60):
             SELECT t.id, t.date, t.account, t.description, t.amount, t.category, t.loan_id, l.name as loan_name
             FROM transactions t
             LEFT JOIN loans l ON t.loan_id = l.id
-            WHERE t.description LIKE ? OR t.account LIKE ? OR t.category LIKE ?
+            WHERE t.user_id = ? AND (t.description LIKE ? OR t.account LIKE ? OR t.category LIKE ?)
             ORDER BY t.date DESC
             LIMIT ?
-        """, (query, query, query, limit))
+        """, (current_user.id, query, query, query, limit))
     else:
         cursor.execute("""
             SELECT t.id, t.date, t.account, t.description, t.amount, t.category, t.loan_id, l.name as loan_name
             FROM transactions t
             LEFT JOIN loans l ON t.loan_id = l.id
-            WHERE t.category = 'Deudas y créditos'
+            WHERE t.user_id = ? AND (
+               t.category = 'Deudas y créditos'
                OR t.description LIKE '%cuota%'
                OR t.description LIKE '%fraccionar%'
                OR t.description LIKE '%prestamo%'
@@ -1639,9 +1654,10 @@ def search_loan_candidates(q: str = "", limit: int = 60):
                OR t.description LIKE '%crédito%'
                OR t.description LIKE '%fpv%'
                OR t.loan_id IS NOT NULL
+            )
             ORDER BY t.date DESC
             LIMIT ?
-        """, (limit,))
+        """, (current_user.id, limit))
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -1781,7 +1797,7 @@ async def upload_statement(
         WHERE account = ? 
           AND abs(amount - ?) < 0.01
           AND abs(julianday(date) - julianday(?)) <= 1.5
-          AND (user_id = ? OR user_id IS NULL)
+          AND user_id = ?
         """, (tx["account"], tx["amount"], tx["date"], current_user.id))
         candidates = cursor.fetchall()
 

@@ -13,7 +13,7 @@ DEFAULT_DEV_USER_ID = "00000000-0000-0000-0000-000000000000"
 DEFAULT_DEV_EMAIL = "admin@avenuewealth.local"
 DEFAULT_DEV_ROLE = "admin"
 
-VALID_ROLES = ["admin", "user", "advisor", "auditor"]
+VALID_ROLES = ["admin", "user", "advisor", "auditor", "guest"]
 
 class User(BaseModel):
     id: str
@@ -79,9 +79,10 @@ def get_current_user(
     """
     Dependency that extracts and validates the authenticated user.
     - If Bearer token is provided: validates token, extracts claims, syncs user with DB.
+    - If guest_id is provided via X-Guest-ID or Bearer guest_*: returns isolated guest user.
     - If no token is provided:
         * If REQUIRE_AUTH=true: rejects with 401 Unauthorized.
-        * If REQUIRE_AUTH=false (default for local development and test suite): returns default admin user.
+        * If REQUIRE_AUTH=false: returns default admin user (for unit tests / local CLI).
     """
     from backend.database import get_user_by_id, upsert_user
 
@@ -96,11 +97,31 @@ def get_current_user(
         if auth_header.lower().startswith("bearer "):
             token = auth_header[7:].strip()
 
+    # 1. Guest session identification
+    guest_id = None
+    if request and "x-guest-id" in request.headers:
+        guest_id = request.headers["x-guest-id"].strip()
+    elif token and token.startswith("guest_"):
+        guest_id = token
+
+    if guest_id:
+        clean_guest_id = "".join(c for c in guest_id if c.isalnum() or c in ("-", "_"))
+        if not clean_guest_id.startswith("guest_"):
+            clean_guest_id = f"guest_{clean_guest_id}"
+        clean_guest_id = clean_guest_id[:64]
+        return User(
+            id=clean_guest_id,
+            email=f"{clean_guest_id}@guest.avenuewealth",
+            full_name="Invitado",
+            role="guest",
+            is_active=True
+        )
+
     if not token:
         if require_auth:
             raise HTTPException(
                 status_code=401,
-                detail="Se requiere cabecera 'Authorization: Bearer <token>' para acceder a este recurso.",
+                detail="Se requiere cabecera 'Authorization: Bearer <token>' o 'X-Guest-ID' para acceder a este recurso.",
                 headers={"WWW-Authenticate": "Bearer"}
             )
         # Ensure default dev user exists in database

@@ -611,10 +611,16 @@ def set_setting(key: str, value: str, user_id: str = "00000000-0000-0000-0000-00
 def get_all_settings(user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM user_settings WHERE user_id = ? OR user_id IS NULL", (user_id,))
-    rows = cursor.fetchall()
+    # First get system defaults
+    cursor.execute("SELECT key, value FROM user_settings WHERE user_id = '00000000-0000-0000-0000-000000000000'")
+    res = {r["key"]: r["value"] for r in cursor.fetchall()}
+    # Then override with user-specific settings
+    if user_id != "00000000-0000-0000-0000-000000000000":
+        cursor.execute("SELECT key, value FROM user_settings WHERE user_id = ?", (user_id,))
+        for r in cursor.fetchall():
+            res[r["key"]] = r["value"]
     conn.close()
-    return {r["key"]: r["value"] for r in rows}
+    return res
 
 def get_categories_list(user_id: str = "00000000-0000-0000-0000-000000000000") -> list:
     conn = get_connection()
@@ -622,8 +628,8 @@ def get_categories_list(user_id: str = "00000000-0000-0000-0000-000000000000") -
     cursor.execute("""
     SELECT c.*, COUNT(t.id) as tx_count
     FROM categories c
-    LEFT JOIN transactions t ON t.category = c.name AND (t.user_id = ? OR t.user_id IS NULL)
-    WHERE c.user_id = ? OR c.user_id IS NULL OR c.is_system = 1
+    LEFT JOIN transactions t ON t.category = c.name AND t.user_id = ?
+    WHERE c.user_id = ? OR c.is_system = 1
     GROUP BY c.id
     ORDER BY c.name ASC
     """, (user_id, user_id))
@@ -662,10 +668,11 @@ def update_category(old_name: str, new_name: str, color: str = None, icon: str =
         params.append(icon)
     if updates:
         params.append(old_name)
-        cursor.execute(f"UPDATE categories SET {', '.join(updates)} WHERE name = ?", params)
+        params.append(user_id)
+        cursor.execute(f"UPDATE categories SET {', '.join(updates)} WHERE name = ? AND (user_id = ? OR is_system = 1)", params)
         if new_name and new_name.strip() != old_name:
-            cursor.execute("UPDATE transactions SET category = ? WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (new_name.strip(), old_name, user_id))
-            cursor.execute("UPDATE category_rules SET category = ? WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (new_name.strip(), old_name, user_id))
+            cursor.execute("UPDATE transactions SET category = ? WHERE category = ? AND user_id = ?", (new_name.strip(), old_name, user_id))
+            cursor.execute("UPDATE category_rules SET category = ? WHERE category = ? AND user_id = ?", (new_name.strip(), old_name, user_id))
     conn.commit()
     conn.close()
     return {"status": "updated", "old_name": old_name, "new_name": new_name or old_name}
@@ -679,10 +686,10 @@ def delete_category(name: str, fallback_category: str = "Otras compras", user_id
         conn.close()
         raise ValueError(f"La categoría '{name}' no existe.")
 
-    cursor.execute("UPDATE transactions SET category = ? WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (fallback_category, name, user_id))
+    cursor.execute("UPDATE transactions SET category = ? WHERE category = ? AND user_id = ?", (fallback_category, name, user_id))
     reassigned_count = cursor.rowcount
-    cursor.execute("DELETE FROM category_rules WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (name, user_id))
-    cursor.execute("DELETE FROM categories WHERE name = ?", (name,))
+    cursor.execute("DELETE FROM category_rules WHERE category = ? AND user_id = ?", (name, user_id))
+    cursor.execute("DELETE FROM categories WHERE name = ? AND (user_id = ? OR is_system = 0)", (name, user_id))
     conn.commit()
     conn.close()
     return {"status": "deleted", "name": name, "reassigned_transactions": reassigned_count}

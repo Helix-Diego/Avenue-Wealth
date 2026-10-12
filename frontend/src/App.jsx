@@ -133,7 +133,7 @@ export default function App() {
       const res = await authFetch(url);
       const data = await res.json();
       setSummary(data);
-      if (data?.available_months?.length > 0 && !data.available_months.includes(selectedMonth)) {
+      if (data?.available_months?.length > 0 && selectedMonth !== 'all' && !data.available_months.includes(selectedMonth)) {
         setSelectedMonth(data.available_months[0]);
       }
     } catch (err) {

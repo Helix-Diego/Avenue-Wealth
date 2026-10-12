@@ -848,8 +848,15 @@ def find_transfer_counterpart(tx_id: int):
     t_date = target["date"]
     t_acc = target["account"]
 
+    t_user_id = target.get("user_id")
+
     # Candidate query
-    cursor.execute("""
+    user_filter = "AND user_id = ?" if t_user_id else ""
+    params = [t_date, tx_id, t_acc, t_amt, t_date, tx_id]
+    if t_user_id:
+        params.append(t_user_id)
+
+    cursor.execute(f"""
     SELECT *, abs(julianday(date) - julianday(?)) as day_diff
     FROM transactions
     WHERE id != ?
@@ -857,8 +864,9 @@ def find_transfer_counterpart(tx_id: int):
       AND abs(amount + ?) < 0.05
       AND abs(julianday(date) - julianday(?)) <= 3.5
       AND (linked_tx_id IS NULL OR linked_tx_id = ?)
+      {user_filter}
     ORDER BY day_diff ASC, id DESC
-    """, (t_date, tx_id, t_acc, t_amt, t_date, tx_id))
+    """, params)
     candidates = [dict(r) for r in cursor.fetchall()]
     conn.close()
 

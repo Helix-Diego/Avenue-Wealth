@@ -12,7 +12,7 @@ export async function onRequest(context) {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Origin, User-Agent",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, Origin, User-Agent, X-Guest-ID",
         "Access-Control-Max-Age": "86400",
       },
     });

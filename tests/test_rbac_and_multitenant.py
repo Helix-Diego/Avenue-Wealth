@@ -163,5 +163,34 @@ class TestRBACAndMultiTenant(unittest.TestCase):
         res_u1_txs = self.client.get("/api/transactions", headers=self.user1_headers)
         self.assertEqual(len(res_u1_txs.json()["transactions"]), 1)
 
+    def test_05_guest_mode_isolation(self):
+        """Guest 1 imports transactions; Guest 2 receives 0 transactions (strict guest boundary)."""
+        guest1_id = "guest_11111111-2222-3333-4444-555555555555"
+        guest2_id = "guest_99999999-8888-7777-6666-555555555555"
+
+        csv_data = """FECHA;CONCEPTO;IMPORTE;SALDO
+12/10/2026;CARREFOUR GUEST;-40,00;500,00
+"""
+        file_bytes = io.BytesIO(csv_data.encode("utf-8"))
+        res_upload = self.client.post(
+            "/api/upload",
+            files={"file": ("extracto.csv", file_bytes, "text/csv")},
+            data={"account": "Santander Guest"},
+            headers={"X-Guest-ID": guest1_id}
+        )
+        self.assertEqual(res_upload.status_code, 200)
+
+        # Guest 1 sees their 1 transaction
+        res_g1 = self.client.get("/api/transactions", headers={"X-Guest-ID": guest1_id})
+        self.assertEqual(len(res_g1.json()["transactions"]), 1)
+
+        # Guest 2 receives 0 transactions
+        res_g2 = self.client.get("/api/transactions", headers={"X-Guest-ID": guest2_id})
+        self.assertEqual(len(res_g2.json()["transactions"]), 0)
+
+        # Authenticated User 1 still sees only their original 1 transaction
+        res_u1 = self.client.get("/api/transactions", headers=self.user1_headers)
+        self.assertEqual(len(res_u1.json()["transactions"]), 1)
+
 if __name__ == "__main__":
     unittest.main()
