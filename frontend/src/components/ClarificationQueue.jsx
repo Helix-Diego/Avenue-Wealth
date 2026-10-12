@@ -18,12 +18,19 @@ export default function ClarificationQueue({
   categories, 
   onResolve, 
   onRefresh,
-  loading 
+  loading,
+  enableCompanyExpenses = true
 }) {
   const [selectedCategories, setSelectedCategories] = useState({});
   const [learnRules, setLearnRules] = useState({});
   const [resolvingId, setResolvingId] = useState(null);
   const [splitTx, setSplitTx] = useState(null);
+
+  const safeCategories = (categories || []).filter(c => {
+    const name = typeof c === 'string' ? c : c.name;
+    if (!enableCompanyExpenses && name === 'Gastos de Empresa') return false;
+    return true;
+  });
 
   const handleResolve = async (tx, chosenCategory, isReimbursable) => {
     setResolvingId(tx.id);
@@ -100,7 +107,7 @@ export default function ClarificationQueue({
         <Sparkles className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
         <div className="leading-relaxed">
           <strong className="text-neutral-800 dark:text-neutral-200">¿Por qué pregunta el agente?</strong>{' '}
-          Para que tu presupuesto personal sea 100% verídico, los gastos adelantados a tu empresa (gasolina para clientes de BMC, peajes, comidas de trabajo o vuelos) se apartan de tu gasto personal. Al confirmar estas dudas, el agente aprende el patrón para no volverte a preguntar.
+          Para que tu presupuesto personal y métricas sean 100% verídicos, el agente te ayuda a clasificar movimientos ambiguos, traspasos o gastos especiales. Al confirmar estas dudas, el agente aprende el patrón para no volverte a preguntar en futuros extractos.
         </div>
       </div>
 
@@ -173,7 +180,7 @@ export default function ClarificationQueue({
                         onChange={(e) => setSelectedCategories({ ...selectedCategories, [tx.id]: e.target.value })}
                         className="text-xs font-semibold bg-white dark:bg-neutral-700 border border-neutral-300 dark:border-neutral-600 rounded-md px-2.5 py-1.5 text-neutral-900 dark:text-white outline-none cursor-pointer"
                       >
-                        {categories.map((c) => (
+                        {safeCategories.map((c) => (
                           <option key={c} value={c}>
                             {c}
                           </option>
@@ -211,16 +218,18 @@ export default function ClarificationQueue({
                       </button>
                     )}
 
-                    {/* 💼 Empresa (Reembolsable) - ALWAYS VISIBLE */}
-                    <button
-                      disabled={resolvingId === tx.id}
-                      onClick={() => handleResolve(tx, currentCat, 1)}
-                      className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold bg-sky-600 hover:bg-sky-700 active:scale-95 text-white transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                      title="Marcar como gasto adelantado a BMC Software para que te lo reembolsen"
-                    >
-                      <Briefcase className="w-3.5 h-3.5" />
-                      <span>Es de Empresa (Reembolsable)</span>
-                    </button>
+                    {/* 💼 Empresa (Reembolsable) - Only if enabled */}
+                    {enableCompanyExpenses && (
+                      <button
+                        disabled={resolvingId === tx.id}
+                        onClick={() => handleResolve(tx, currentCat, 1)}
+                        className="flex items-center space-x-1.5 px-3.5 py-1.5 rounded-md text-xs font-semibold bg-sky-600 hover:bg-sky-700 active:scale-95 text-white transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                        title="Marcar como gasto adelantado de empresa para reembolso"
+                      >
+                        <Briefcase className="w-3.5 h-3.5" />
+                        <span>Es de Empresa (Reembolsable)</span>
+                      </button>
+                    )}
 
                     {/* 👤 Personal - ALWAYS VISIBLE */}
                     <button

@@ -5,7 +5,8 @@ export default function NewTransactionModal({
   isOpen, 
   onClose, 
   onSave, 
-  categories 
+  categories,
+  enableCompanyExpenses = true
 }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [account, setAccount] = useState('Banco Santander');
@@ -13,6 +14,12 @@ export default function NewTransactionModal({
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [isReimbursable, setIsReimbursable] = useState(false);
+
+  const safeCategories = (categories || []).filter(c => {
+    const name = typeof c === 'string' ? c : c.name;
+    if (!enableCompanyExpenses && name === 'Gastos de Empresa') return false;
+    return true;
+  });
   const [notes, setNotes] = useState('');
   const [isIncome, setIsIncome] = useState(false);
   const [accountOptions, setAccountOptions] = useState([
@@ -157,30 +164,32 @@ export default function NewTransactionModal({
                 className="w-full px-2.5 py-1.5 rounded-md bg-neutral-50 dark:bg-[#2b2b2b] border border-neutral-200 dark:border-neutral-700 outline-none"
               >
                 <option value="">(Auto clasificar por Knowledge Base / IA)</option>
-                {categories.map((c) => (
+                {safeCategories.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
           </div>
 
-          {/* Company reimbursable toggle */}
-          <label className="flex items-center space-x-2 p-2.5 rounded-md bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/40 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isReimbursable}
-              onChange={(e) => setIsReimbursable(e.target.checked)}
-              className="rounded border-sky-400 text-sky-600 focus:ring-0"
-            />
-            <div className="text-[11px]">
-              <span className="font-semibold text-sky-900 dark:text-sky-300 flex items-center gap-1">
-                <Briefcase className="w-3 h-3" /> Gasto Reembolsable de Empresa (BMC)
-              </span>
-              <span className="text-sky-800 dark:text-sky-400 block">
-                No computará como gasto personal ni inflará tu consumo de gasolina; quedará como saldo a cobrar de BMC.
-              </span>
-            </div>
-          </label>
+          {/* Company reimbursable toggle - only if enabled */}
+          {enableCompanyExpenses && (
+            <label className="flex items-center space-x-2 p-2.5 rounded-md bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/40 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isReimbursable}
+                onChange={(e) => setIsReimbursable(e.target.checked)}
+                className="rounded border-sky-400 text-sky-600 focus:ring-0"
+              />
+              <div className="text-[11px]">
+                <span className="font-semibold text-sky-900 dark:text-sky-300 flex items-center gap-1">
+                  <Briefcase className="w-3 h-3" /> Gasto Reembolsable de Empresa
+                </span>
+                <span className="text-sky-800 dark:text-sky-400 block">
+                  Se apartará de tu gasto personal y quedará computado como saldo pendiente de liquidación.
+                </span>
+              </div>
+            </label>
+          )}
 
           <div>
             <label className="block text-[11px] font-medium text-neutral-500 mb-1">Nota adicional</label>

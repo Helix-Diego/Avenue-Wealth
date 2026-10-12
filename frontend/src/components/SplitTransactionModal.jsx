@@ -260,7 +260,7 @@ export default function SplitTransactionModal({
                   />
                   <span className="flex items-center gap-1 font-medium">
                     <Briefcase className="w-3 h-3 text-sky-600" />
-                    Esta parte es gasto de empresa (reembolsable por BMC)
+                    Esta parte es gasto de empresa (reembolsable)
                   </span>
                 </label>
               </div>

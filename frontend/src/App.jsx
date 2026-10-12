@@ -390,6 +390,7 @@ export default function App() {
             onRefresh={refreshAll}
             loading={loading}
             onTriggerUndo={handleTriggerUndoToast}
+            enableCompanyExpenses={enableCompanyExpenses}
           />
         )}
 
@@ -448,7 +449,10 @@ export default function App() {
 
         {activeTab === 'import' && (
           <ImportView
-            onUploadComplete={() => refreshAll()}
+            onUploadComplete={(detectedMonth) => {
+              if (detectedMonth) setSelectedMonth(detectedMonth);
+              refreshAll(detectedMonth || selectedMonth);
+            }}
             setActiveTab={setActiveTab}
             setSelectedMonth={setSelectedMonth}
           />
@@ -507,6 +511,7 @@ export default function App() {
         onClose={() => setIsNewTxOpen(false)}
         onSave={handleCreateTransaction}
         categories={categories}
+        enableCompanyExpenses={enableCompanyExpenses}
       />
 
       <FundContributionModal

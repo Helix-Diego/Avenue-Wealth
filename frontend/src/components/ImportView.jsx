@@ -319,7 +319,7 @@ export default function ImportView({ onUploadComplete, setActiveTab, setSelected
       });
 
       if (onUploadComplete) {
-        onUploadComplete();
+        onUploadComplete(data.most_frequent_month || data.month_detected || currentItem.month);
       }
 
     } catch (err) {
@@ -579,16 +579,27 @@ export default function ImportView({ onUploadComplete, setActiveTab, setSelected
               </h3>
             </div>
             {aggregateStats.latestMonth && (
-              <button
-                onClick={() => {
-                  if (setSelectedMonth) setSelectedMonth(aggregateStats.latestMonth);
-                  if (setActiveTab) setActiveTab('dashboard');
-                }}
-                className="text-xs flex items-center space-x-1 px-3 py-1 bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-700 rounded-md hover:bg-neutral-50 shadow-2xs font-semibold cursor-pointer"
-              >
-                <span>Ver mes {aggregateStats.latestMonth} en Dashboard</span>
-                <ArrowRight className="w-3.5 h-3.5 text-indigo-600" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (setSelectedMonth) setSelectedMonth(aggregateStats.latestMonth);
+                    if (setActiveTab) setActiveTab('transactions');
+                  }}
+                  className="text-xs flex items-center space-x-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-xs font-bold cursor-pointer transition-all"
+                >
+                  <span>Ver Transacciones ({aggregateStats.imported})</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (setSelectedMonth) setSelectedMonth(aggregateStats.latestMonth);
+                    if (setActiveTab) setActiveTab('dashboard');
+                  }}
+                  className="text-xs flex items-center space-x-1 px-3 py-1.5 bg-white dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-300 dark:border-neutral-700 rounded-lg hover:bg-neutral-50 shadow-2xs font-semibold cursor-pointer"
+                >
+                  <span>Ver Dashboard</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -618,7 +629,7 @@ export default function ImportView({ onUploadComplete, setActiveTab, setSelected
               <div className="text-lg font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">
                 {aggregateStats.fund_subs_updated}
               </div>
-              <div className="text-[11px] text-neutral-500">Aportaciones MSCI Detectadas</div>
+              <div className="text-[11px] text-neutral-500">Aportaciones a Fondos o Acciones</div>
             </div>
           </div>
 
@@ -928,7 +939,7 @@ export default function ImportView({ onUploadComplete, setActiveTab, setSelected
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 font-mono">13 mov.</span>
               </div>
               <p className="text-[11px] text-neutral-500 mt-1 line-clamp-2">
-                Fondo MSCI World, aportaciones periódicas, cuenta remunerada...
+                Fondos de inversión, aportaciones periódicas, cuenta remunerada...
               </p>
             </button>
           )}

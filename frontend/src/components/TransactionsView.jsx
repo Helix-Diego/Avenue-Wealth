@@ -266,8 +266,11 @@ export default function TransactionsView({
 
   // Safe array wrappers
   const txList = Array.isArray(transactions) ? transactions : [];
-  const banks = Array.isArray(banksList) ? banksList : [];
-  const safeCategories = Array.isArray(categories) ? categories : [];
+  const safeCategories = (Array.isArray(categories) ? categories : []).filter(c => {
+    const name = typeof c === 'string' ? c : c.name;
+    if (!enableCompanyExpenses && name === 'Gastos de Empresa') return false;
+    return true;
+  });
   const safeMonths = Array.isArray(availableMonths) ? availableMonths : [];
 
   // Extract bank alias options and distinct accounts present in transactions
@@ -798,8 +801,19 @@ export default function TransactionsView({
             <tbody className="divide-y divide-[#f2f2f0] dark:divide-[#2c2c2c]">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={enableCompanyExpenses ? 8 : 7} className="py-8 text-center text-neutral-400">
-                    No se encontraron transacciones con los filtros seleccionados.
+                  <td colSpan={enableCompanyExpenses ? 8 : 7} className="py-12 text-center text-neutral-400">
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-2">
+                      No se encontraron transacciones con los filtros seleccionados.
+                    </p>
+                    {selectedMonth !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMonth('all')}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer"
+                      >
+                        <span>Ver todas las transacciones (Todos los meses)</span>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (

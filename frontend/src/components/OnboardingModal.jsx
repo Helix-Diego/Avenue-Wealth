@@ -296,6 +296,12 @@ export default function OnboardingModal({
     }
   };
 
+  // Immediate skip for guests or users who want to dive right in
+  const handleSkip = () => {
+    localStorage.setItem('spend_agent_onboarding_completed', 'true');
+    if (onComplete) onComplete();
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -379,6 +385,14 @@ export default function OnboardingModal({
                 <span className="text-xs font-medium text-neutral-400 ml-2">
                   {step} de {totalSteps}
                 </span>
+                <button
+                  type="button"
+                  onClick={handleSkip}
+                  className="ml-3 text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 px-2 py-1 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors cursor-pointer"
+                  title="Saltar configuración"
+                >
+                  Saltar
+                </button>
               </div>
             </div>
 
@@ -725,7 +739,7 @@ export default function OnboardingModal({
                       )}
 
                       {/* Guest / Local Option */}
-                      <div className="pt-2 text-center">
+                      <div className="pt-2 flex items-center justify-center gap-3 flex-wrap">
                         <button
                           type="button"
                           onClick={() => {
@@ -734,7 +748,15 @@ export default function OnboardingModal({
                           }}
                           className="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer"
                         >
-                          Continuar como invitado (Modo Local Offline)
+                          Continuar como invitado (Personalizar)
+                        </button>
+                        <span className="text-neutral-300 dark:text-neutral-700 hidden sm:inline">•</span>
+                        <button
+                          type="button"
+                          onClick={handleSkip}
+                          className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                        >
+                          Entrar directamente a la app →
                         </button>
                       </div>
                     </div>
