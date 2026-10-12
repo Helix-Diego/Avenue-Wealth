@@ -460,7 +460,7 @@ export default function DashboardView({
               </div>
               <div className="mt-2 text-[11px] text-[#787774] dark:text-[#8f8f8f] flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                <span>Excluye recibos de tarjeta y BMC</span>
+                <span>Excluye recibos de tarjeta y gastos de empresa</span>
               </div>
             </div>
 

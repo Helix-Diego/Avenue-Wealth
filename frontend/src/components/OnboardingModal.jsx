@@ -153,7 +153,7 @@ export default function OnboardingModal({
     setAuthError('');
     setAuthSuccess('');
 
-    const ALLOWED_BETA_EMAILS = ['diegotcach@gmail.com', 'carla.garcia.faya@gmail.com'];
+    const ALLOWED_BETA_EMAILS = ['diegotcach@gmail.com', 'carla.garcia.faya@gmail.com', 'hidesinoquizas@gmail.com'];
     const cleanEmail = email.toLowerCase().trim();
     if (!ALLOWED_BETA_EMAILS.includes(cleanEmail) && !cleanEmail.endsWith('@avenue.wealth')) {
       setAuthError(`Acceso restringido: Avenue Wealth está en fase beta privada. El correo '${cleanEmail}' no tiene acceso autorizado.`);

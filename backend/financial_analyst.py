@@ -131,10 +131,10 @@ def get_monthly_balance_matrix(user_id: str = "00000000-0000-0000-0000-000000000
     """
     Computes a complete spreadsheet-style (Excel / Notion) financial balance matrix.
     Includes:
-      1. Income (Sueldo BMC, Otros Ingresos, Total)
+      1. Income (Nómina / Sueldo, Otros Ingresos, Total)
       2. Real Personal Expenses by Category (net of Bizum repayments, no double-counting)
       3. Credit Card Settlements (Iberia Cards, Amex, Santander - deduplicated, informative)
-      4. Reimbursable Work Expenses (BMC)
+      4. Reimbursable Work Expenses (Empresa)
       5. Results & Net Worth Progression
     """
     conn = get_connection()
@@ -1054,7 +1054,7 @@ def build_llm_financial_context(user_query: Optional[str] = None, user_id: str =
         lines.append(f"  * {s['symbol']}: {s['shares']} acciones @ ${s['current_price']:.2f} (Total: {s.get('value_eur', 0.0):,.2f} € / PnL: {s.get('pnl_eur', 0.0):+,.2f} €)")
 
     # 2. Reimbursable Work Expenses Audit
-    lines.append("\n### 2. GASTOS DE TRABAJO A REEMBOLSAR (BMC SOFTWARE)")
+    lines.append("\n### 2. GASTOS DE EMPRESA PENDIENTES DE REEMBOLSO")
     lines.append(f"- Total pendiente de recuperar: **{reimb['pending_total']:,.2f} €** ({reimb['pending_count']} movimientos pendientes)")
     lines.append(f"- Reembolsos ya liquidados históricamente: {reimb['reimbursed_total']:,.2f} €")
     if reimb["pending_items"]:
@@ -1064,7 +1064,7 @@ def build_llm_financial_context(user_query: Optional[str] = None, user_id: str =
 
     # 3. Multi-Month Trend Overview (6 Months: Apr-Sep 2026)
     lines.append("\n### 3. EVOLUCIÓN HISTÓRICA MENSUAL (ABRIL - SEPTIEMBRE 2026)")
-    lines.append("| Mes | Nómina BMC / Sueldo (€) | Otros Ingresos (€) | Total Ingresos (€) | Gasto Personal (€) | Ahorro Neto (€) | Tasa Ahorro (%) | Movimientos |")
+    lines.append("| Mes | Nómina / Sueldo (€) | Otros Ingresos (€) | Total Ingresos (€) | Gasto Personal (€) | Ahorro Neto (€) | Tasa Ahorro (%) | Movimientos |")
     lines.append("|---|---|---|---|---|---|---|---|")
     for t in trends:
         sal = t.get('salary', 0.0)
@@ -1097,7 +1097,7 @@ def build_llm_financial_context(user_query: Optional[str] = None, user_id: str =
     # 7. Financial Health & Emergency Fund
     lines.append("\n### 7. SALUD FINANCIERA Y CAPACIDAD DE APORTACIÓN")
     lines.append(f"- Gasto medio mensual personal (Burn Rate): {health['avg_monthly_burn']:,.2f} €")
-    lines.append(f"- Ingreso medio mensual (Nómina BMC + otros): {health['avg_monthly_income']:,.2f} €")
+    lines.append(f"- Ingreso medio mensual (Nómina + otros ingresos): {health['avg_monthly_income']:,.2f} €")
     lines.append(f"- Capacidad media de ahorro mensual: {health['avg_monthly_savings']:,.2f} €")
     lines.append(f"- Colchón de emergencia actual: **{health['emergency_buffer_months']} meses de gastos** ({health['liquid_cash']:,.2f} €)")
     lines.append(f"- Fondo de emergencia objetivo (3 meses): {health['target_buffer_3m']:,.2f} € | (6 meses): {health['target_buffer_6m']:,.2f} €")
@@ -1130,7 +1130,7 @@ def build_llm_financial_context(user_query: Optional[str] = None, user_id: str =
         keywords = []
         q_upper = strip_accents(user_query)
         loan_keywords = ["PRESTAMO", "CREDITO", "DEUDA", "COCHE", "UNICAJA", "MUTUA", "SEGURO", "FRACCIONAR", "AMORTIZAR", "SANTANDER 0001557", "0001557"]
-        salary_keywords = ["NOMINA", "SUELDO", "SALARIO", "BMC", "INGRESOS", "COBRO", "COBRAR", "PAGA", "RETRIBUCION"]
+        salary_keywords = ["NOMINA", "SUELDO", "SALARIO", "INGRESOS", "COBRO", "COBRAR", "PAGA", "RETRIBUCION"]
         standard_keywords = ["MERCADONA", "ALCAMPO", "CARREFOUR", "UBER", "GLOVO", "AMEX", "AMERICAN EXPRESS", "IBERIA", "SANTANDER", "N26", "GO FIT", "PADEL", "FUENCARRAL", "ALQUILER", "AGUSTIN", "REPSOL", "CEPSA", "GASOLINA", "APPLE", "PLAYSTATION", "SPOTIFY", "VIAJE", "PARIS", "MENORCA", "MALAGA"]
         for term in loan_keywords + salary_keywords + standard_keywords:
             if term in q_upper:

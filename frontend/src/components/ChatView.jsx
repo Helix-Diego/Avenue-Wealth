@@ -22,15 +22,15 @@ import { authFetch } from '../supabaseClient';
 
 export const INITIAL_CHAT_MESSAGE = {
   role: 'assistant',
-  content: `# ¡Hola! 👋 Soy tu Asistente de Inteligencia Financiera Personal
+  content: `# ¡Hola! 👋 Soy tu Asesor de Inteligencia Financiera en Avenue Wealth
 Tengo acceso en tiempo real a tus cuentas bancarias conectadas, fondos de inversión registrados y cartera de acciones con cotizaciones en vivo vía Finnhub.
 
 ### 🔍 ¿En qué te puedo ayudar hoy?
-- 📊 **Auditoría Semestral**: Diagnóstico de ingresos, gastos y evolución de tu tasa de ahorro (Abril - Septiembre 2026).
-- 🔄 **Suscripciones y Gastos Fijos**: Detección de alquiler, gimnasio, cuotas y suscripciones digitales.
+- 📊 **Auditoría Holística**: Diagnóstico de ingresos, gastos y evolución de tu tasa de ahorro.
+- 🔄 **Suscripciones y Gastos Fijos**: Detección de alquiler, gimnasio, cuotas y suscripciones recurrentes.
 - 📈 **Simulación MSCI World**: Capacidad de aportación mensual y proyección de interés compuesto.
-- 💼 **Gastos Reembolsables BMC**: Control de gastos de trabajo adelantados pendientes de liquidar.
-- 🛒 **Análisis por Comercio**: Desglose exacto en supermercados (Alcampo, Mercadona), restaurantes, gasolina o viajes.
+- 💼 **Gastos Reembolsables de Empresa**: Control de gastos adelantados pendientes de liquidar.
+- 🛒 **Análisis por Comercio**: Desglose exacto en supermercados, restaurantes, suministros o viajes.
 
 *Selecciona una de las sugerencias rápidas abajo o escribe cualquier duda.*`
 };
@@ -139,9 +139,9 @@ export default function ChatView({
   };
 
   const exportChatMarkdown = () => {
-    const header = `# Informe de Inteligencia Financiera - Diego Hernández\nGenerado: ${new Date().toLocaleString('es-ES')}\n\n---\n\n`;
+    const header = `# Informe de Inteligencia Financiera - Avenue Wealth\nGenerado: ${new Date().toLocaleString('es-ES')}\n\n---\n\n`;
     const body = messages.map(m => {
-      const author = m.role === 'user' ? '### 👤 Diego Hernández' : '### 🤖 Agente Financiero DeepSeek';
+      const author = m.role === 'user' ? '### 👤 Usuario' : '### 🤖 Asesor Avenue Wealth';
       return `${author}\n\n${m.content}\n\n---\n`;
     }).join('\n');
 
@@ -149,7 +149,7 @@ export default function ChatView({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `informe_financiero_diego_${new Date().toISOString().slice(0, 10)}.md`);
+    link.setAttribute('download', `informe_financiero_avenue_${new Date().toISOString().slice(0, 10)}.md`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -190,8 +190,8 @@ export default function ChatView({
     },
     {
       category: "Empresa",
-      label: "💼 Gastos BMC pendientes de cobro",
-      query: "¿Qué gastos de trabajo tengo pendientes de recuperar de BMC Software y cuánto suman?"
+      label: "💼 Gastos de empresa pendientes de cobro",
+      query: "¿Qué gastos adelantados de trabajo tengo pendientes de liquidar y cuánto suman en total?"
     },
     {
       category: "Supermercados",
@@ -286,7 +286,7 @@ export default function ChatView({
 
         <div className="p-2.5 rounded-lg bg-white dark:bg-[#202020] border border-neutral-200/80 dark:border-neutral-800 shadow-2xs">
           <div className="text-[10px] text-neutral-500 font-medium uppercase tracking-wider flex items-center justify-between">
-            <span>BMC Reembolsos</span>
+            <span>Reembolsos Empresa</span>
             <Briefcase className="w-3 h-3 text-sky-500" />
           </div>
           <div className="text-sm font-bold text-sky-600 dark:text-sky-400 font-mono mt-0.5">

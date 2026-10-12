@@ -31,12 +31,12 @@ DIEGO_CATEGORIES = [
     "Gastos de Empresa"
 ]
 
-# Raw Knowledge Base extracted from Diego's 27-page PDF reference
+# Raw Knowledge Base extracted from reference dataset
 KNOWLEDGE_BASE_ENTRIES = [
     # Sueldo
-    ("BMC SOFTWARE", "Sueldo", 3127.84, "Nómina de BMC Software Sa"),
-    ("NOMINA BMC", "Sueldo", 3189.34, "Nómina"),
-    ("TRANSFERENCIA DE BMC SOFTWARE", "Sueldo", 2610.76, "Nómina mensual"),
+    ("NOMINA EMPRESA", "Sueldo", 3127.84, "Nómina mensual empresa"),
+    ("NOMINA MENSUAL", "Sueldo", 3189.34, "Nómina"),
+    ("TRANSFERENCIA DE EMPRESA", "Sueldo", 2610.76, "Nómina mensual"),
 
     # Vivienda & Gastos Vivienda
     ("AGUSTIN DE LA FUENTE MARTINEZ", "Vivienda", -600.00, "Alquiler mensual vivienda"),
@@ -319,7 +319,7 @@ KNOWLEDGE_BASE_ENTRIES = [
     ("TRASPASO: MALAGA", "Traspaso entre cuentas", -280.00, "Traspaso interno entre cuentas"),
     ("TRASPASO: HOTEL MALAGA", "Traspaso entre cuentas", -250.00, "Traspaso interno entre cuentas"),
     ("TRASPASO: COCHE ARUBA", "Traspaso entre cuentas", -126.00, "Traspaso interno entre cuentas"),
-    ("TRASPASO: DESAYUNO BMC", "Traspaso entre cuentas", -130.00, "Traspaso interno entre cuentas"),
+    ("TRASPASO: DESAYUNO TRABAJO", "Traspaso entre cuentas", -130.00, "Traspaso interno entre cuentas"),
     ("TRASPASO: ENTRADA NFL", "Traspaso entre cuentas", -60.00, "Traspaso interno entre cuentas"),
     ("TRASPASO: ZAPATOW", "Traspaso entre cuentas", -80.00, "Traspaso interno entre cuentas"),
     ("TRASPASO: CREDTO", "Traspaso entre cuentas", -50.00, "Traspaso interno entre cuentas"),

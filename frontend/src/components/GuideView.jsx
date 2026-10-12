@@ -516,7 +516,7 @@ export default function GuideView({ setActiveTab }) {
           summary: 'Control de pagos adelantados, balance pendiente y conciliación con la transferencia de la empresa.',
           targetTab: 'company',
           tabButtonLabel: 'Ir a Gastos Reembolsables',
-          tags: ['adelantos', 'reembolsos', 'bmc', 'empresa', 'cobrado'],
+          tags: ['adelantos', 'reembolsos', 'empresa', 'trabajo', 'cobrado'],
           readingTime: '3 min',
           sections: [
             {

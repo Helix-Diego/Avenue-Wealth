@@ -114,7 +114,7 @@ export default function CompanyExpensesView({ onRefreshSummary }) {
             <span className="text-3xl">💼</span>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-[#37352f] dark:text-[#f0f0f0]">
-                Gastos Reembolsables (BMC Software)
+                Gastos Reembolsables de Empresa
               </h1>
               <p className="text-xs text-[#787774] dark:text-[#9c9c9c]">
                 Gestión de importes adelantados con tu tarjeta personal pendientes de recuperar o a reclasificar a gasto personal
@@ -207,7 +207,7 @@ export default function CompanyExpensesView({ onRefreshSummary }) {
 
             <div className="text-xs text-neutral-600 dark:text-neutral-300 space-y-2">
               <p>
-                Este movimiento dejará de ser considerado como adelanto a BMC Software y se computará en tus gastos personales:
+                Este movimiento dejará de ser considerado como adelanto a la empresa y se computará en tus gastos personales:
               </p>
               <div className="p-3 bg-neutral-50 dark:bg-neutral-800/60 rounded-lg space-y-1">
                 <div className="font-semibold text-neutral-900 dark:text-white">{convertingTx.description}</div>

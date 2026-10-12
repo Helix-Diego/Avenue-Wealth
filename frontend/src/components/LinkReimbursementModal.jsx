@@ -131,7 +131,7 @@ export default function LinkReimbursementModal({
               </h3>
             </div>
             <p className="text-xs text-neutral-500 dark:text-neutral-400">
-              Asocia este ingreso de BMC con los gastos que adelantaste con tu dinero para marcarlos como cobrados.
+              Asocia este abono de la empresa con los gastos que adelantaste con tu dinero para marcarlos como cobrados.
             </p>
           </div>
           <button

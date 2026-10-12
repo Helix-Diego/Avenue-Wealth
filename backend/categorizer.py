@@ -449,7 +449,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
                     "clarification_question": None,
                     "suggested_category": "Gastos de Empresa",
                     "confidence": 0.99,
-                    "notes": "Devolución / liquidación de gastos de empresa (BMC Helix)"
+                    "notes": "Devolución / liquidación de gastos de empresa"
                 }
         elif any(kw in desc_upper for kw in ["REEMBOLSO", "LIQUIDACION GASTOS", "EXPENSES"]):
             return {
@@ -617,7 +617,7 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
         cat = AMEX_CATEGORY_MAP[bank_category]
         is_potentially_company = any(kw in desc_upper for kw in COMPANY_AMBIGUOUS_KEYWORDS)
         if is_company_enabled and is_potentially_company and cat in ["Gasolina", "Parking/Peajes/Ubers", "Gastos Viajes", "Vuelos", "Restaurantes"]:
-            if any(w in desc_upper for w in ["CLIENTE", "CUSTOMER", "BMC", "TRABAJO"]):
+            if any(w in desc_upper for w in ["CLIENTE", "CUSTOMER", "TRABAJO"]):
                 return {
                     "category": cat,
                     "is_reimbursable": 1,
@@ -644,14 +644,14 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
     if q_match:
         return q_match
 
-    # Step 1: Knowledge Base Match (from Diego's real history)
+    # Step 1: Knowledge Base Match (from verified financial history)
     kb_match = match_knowledge_base(description)
     is_potentially_company = any(kw in desc_upper for kw in COMPANY_AMBIGUOUS_KEYWORDS)
 
     if kb_match:
         cat = kb_match["category"]
         if is_company_enabled and is_potentially_company and cat in ["Gasolina", "Parking/Peajes/Ubers", "Gastos Viajes", "Vuelos", "Restaurantes"]:
-            if any(w in desc_upper for w in ["CLIENTE", "CUSTOMER", "BMC", "TRABAJO"]):
+            if any(w in desc_upper for w in ["CLIENTE", "CUSTOMER", "TRABAJO"]):
                 return {
                     "category": cat,
                     "is_reimbursable": 1,

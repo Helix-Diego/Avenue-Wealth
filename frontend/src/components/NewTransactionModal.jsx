@@ -196,7 +196,7 @@ export default function NewTransactionModal({
             <label className="block text-[11px] font-medium text-neutral-500 mb-1">Nota adicional</label>
             <input
               type="text"
-              placeholder="Opcional: Viaje cliente BMC, reunión..."
+              placeholder="Opcional: Viaje cliente, reunión..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full px-2.5 py-1.5 rounded-md bg-neutral-50 dark:bg-[#2b2b2b] border border-neutral-200 dark:border-neutral-700 outline-none"

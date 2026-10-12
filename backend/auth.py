@@ -146,7 +146,7 @@ def get_current_user(
     email = payload.get("email") or f"{user_id}@user.avenuewealth"
     
     # Whitelist check for private development
-    raw_allowed = os.environ.get("ALLOWED_EMAILS", "diegotcach@gmail.com,carla.garcia.faya@gmail.com")
+    raw_allowed = os.environ.get("ALLOWED_EMAILS", "diegotcach@gmail.com,carla.garcia.faya@gmail.com,hidesinoquizas@gmail.com")
     allowed_list = [e.strip().lower() for e in raw_allowed.split(",") if e.strip()]
     clean_email = email.lower().strip()
     is_whitelisted = (

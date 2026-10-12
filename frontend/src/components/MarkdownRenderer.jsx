@@ -101,7 +101,7 @@ export default function MarkdownRenderer({ content }) {
 
       if (quoteText.includes('💡') || quoteText.toLowerCase().includes('recomendación')) {
         calloutClass = 'bg-emerald-50/60 dark:bg-emerald-950/20 border-l-4 border-emerald-500 text-emerald-900 dark:text-emerald-200';
-      } else if (quoteText.includes('💼') || quoteText.toLowerCase().includes('bmc') || quoteText.toLowerCase().includes('reembols')) {
+      } else if (quoteText.includes('💼') || quoteText.toLowerCase().includes('empresa') || quoteText.toLowerCase().includes('reembols')) {
         calloutClass = 'bg-sky-50/70 dark:bg-sky-950/20 border-l-4 border-sky-500 text-sky-900 dark:text-sky-200';
       } else if (quoteText.includes('⚠️') || quoteText.includes('🚨') || quoteText.toLowerCase().includes('atención') || quoteText.toLowerCase().includes('leak')) {
         calloutClass = 'bg-amber-50/70 dark:bg-amber-950/20 border-l-4 border-amber-500 text-amber-900 dark:text-amber-200';
