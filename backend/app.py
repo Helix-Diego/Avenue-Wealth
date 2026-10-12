@@ -1,19 +1,21 @@
 import os
 import re
 from datetime import datetime
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
+from backend.auth import User, get_current_user, require_roles
 from backend.database import (
     get_connection, init_db, backup_db, restore_db, get_db_path, DB_PATH, sync_realtime_account_balances,
     get_all_settings, get_setting, set_setting, get_categories_list,
     add_category, update_category, delete_category, get_supported_banks,
     update_bank_enabled, update_bank_alias, update_bank_details,
-    get_bank_alias_map, clean_all_transactions
+    get_bank_alias_map, clean_all_transactions,
+    get_user_by_id, list_users, update_user_role, get_system_stats, upsert_user
 )
 from backend.bank_parser import parse_csv_content, parse_excel_content
 from backend.categorizer import (
@@ -36,13 +38,28 @@ from backend.financial_analyst import (
     get_monthly_balance_matrix, get_advanced_analytics
 )
 
-app = FastAPI(title="Spend Agent API", version="2.2.0")
+app = FastAPI(title="Avenue Wealth API", version="3.0.0")
 
+# Security headers middleware
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
-# Enable CORS for local dev
+# Configurable CORS for production & development
+cors_origins_raw = os.environ.get("CORS_ORIGINS", "")
+if cors_origins_raw:
+    origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+else:
+    origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -207,32 +224,87 @@ class ResetDataRequest(BaseModel):
 
 # --- API Endpoints ---
 
+# --- Auth & RBAC API Endpoints ---
+
+class ProfileUpdateRequest(BaseModel):
+    full_name: str
+
+class RoleUpdateRequest(BaseModel):
+    role: str
+
+@app.get("/api/auth/me", tags=["Auth & RBAC"])
+def get_my_profile(current_user: User = Depends(get_current_user)):
+    """Returns the profile and role of the currently authenticated tenant."""
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "role": current_user.role,
+        "is_active": current_user.is_active,
+        "is_admin": current_user.role == "admin"
+    }
+
+@app.put("/api/auth/profile", tags=["Auth & RBAC"])
+def update_my_profile(
+    body: ProfileUpdateRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Updates user display profile name."""
+    upsert_user(current_user.id, current_user.email, body.full_name, current_user.role)
+    return {"status": "ok", "full_name": body.full_name}
+
+@app.get("/api/admin/users", tags=["Admin RBAC"])
+def admin_list_users_endpoint(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(require_roles(["admin"]))
+):
+    """Admin-only: lists all registered tenants and usage stats."""
+    return {"users": list_users(limit=limit, offset=offset)}
+
+@app.put("/api/admin/users/{target_user_id}/role", tags=["Admin RBAC"])
+def admin_change_role_endpoint(
+    target_user_id: str,
+    body: RoleUpdateRequest,
+    current_user: User = Depends(require_roles(["admin"]))
+):
+    """Admin-only: updates tenant role (admin, user, advisor, auditor)."""
+    if body.role not in ["admin", "user", "advisor", "auditor"]:
+        raise HTTPException(status_code=400, detail="Rol inválido. Opciones válidas: admin, user, advisor, auditor.")
+    res = update_user_role(target_user_id, body.role)
+    return res
+
+@app.get("/api/admin/system-stats", tags=["Admin RBAC"])
+def admin_stats_endpoint(current_user: User = Depends(require_roles(["admin"]))):
+    """Admin-only: returns platform-wide metrics and tenant statistics."""
+    return get_system_stats()
+
 # --- Categories API ---
 
 @app.get("/api/categories")
-def get_categories_endpoint():
-    return {"categories": get_categories_list()}
+def get_categories_endpoint(current_user: User = Depends(get_current_user)):
+    return {"categories": get_categories_list(user_id=current_user.id)}
 
 @app.post("/api/categories")
-def create_category_endpoint(req: CategoryCreate):
+def create_category_endpoint(req: CategoryCreate, current_user: User = Depends(get_current_user)):
     try:
-        res = add_category(req.name, req.color or "#64748B", req.icon or "Tag")
+        res = add_category(req.name, req.color or "#64748B", req.icon or "Tag", user_id=current_user.id)
         return {"status": "created", "category": res}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.put("/api/categories/{category_name}")
-def update_category_endpoint(category_name: str, req: CategoryUpdate):
+def update_category_endpoint(category_name: str, req: CategoryUpdate, current_user: User = Depends(get_current_user)):
     try:
-        res = update_category(category_name, req.new_name, req.color, req.icon)
+        res = update_category(category_name, req.new_name, req.color, req.icon, user_id=current_user.id)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/categories/{category_name}")
-def delete_category_endpoint(category_name: str, fallback_category: str = "Otras compras"):
+def delete_category_endpoint(category_name: str, fallback_category: str = "Otras compras", current_user: User = Depends(get_current_user)):
     try:
-        res = delete_category(category_name, fallback_category)
+        res = delete_category(category_name, fallback_category, user_id=current_user.id)
         return res
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -403,7 +475,11 @@ async def restore_backup(file: UploadFile = File(...)):
 
 
 @app.get("/api/summary")
-def get_summary(year: Optional[int] = None, month: Optional[int] = None):
+def get_summary(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    current_user: User = Depends(get_current_user)
+):
     now = datetime.now()
     y = year or now.year
     m = month or now.month
@@ -415,15 +491,15 @@ def get_summary(year: Optional[int] = None, month: Optional[int] = None):
     cursor = conn.cursor()
 
     # Doubts count
-    cursor.execute("SELECT COUNT(*) FROM transactions WHERE needs_clarification = 1")
+    cursor.execute("SELECT COUNT(*) FROM transactions WHERE needs_clarification = 1 AND (user_id = ? OR user_id IS NULL)", (current_user.id,))
     pending_doubts_count = cursor.fetchone()[0]
 
     # Available distinct months in DB
-    cursor.execute("SELECT DISTINCT substr(date, 1, 7) as ym FROM transactions ORDER BY ym DESC")
+    cursor.execute("SELECT DISTINCT substr(date, 1, 7) as ym FROM transactions WHERE (user_id = ? OR user_id IS NULL) ORDER BY ym DESC", (current_user.id,))
     available_months = [r["ym"] for r in cursor.fetchall() if r["ym"]]
 
     # Available distinct accounts in DB
-    cursor.execute("SELECT DISTINCT account FROM transactions ORDER BY account ASC")
+    cursor.execute("SELECT DISTINCT account FROM transactions WHERE (user_id = ? OR user_id IS NULL) ORDER BY account ASC", (current_user.id,))
     available_accounts = [r["account"] for r in cursor.fetchall() if r["account"]]
 
     cursor.execute("SELECT id, name, alias, enabled FROM supported_banks ORDER BY name ASC")
@@ -449,7 +525,8 @@ def get_transactions(
     is_reimbursable: Optional[int] = None,
     needs_clarification: Optional[int] = None,
     search: Optional[str] = None,
-    limit: int = 400
+    limit: int = 400,
+    current_user: User = Depends(get_current_user)
 ):
     conn = get_connection()
     cursor = conn.cursor()
@@ -458,9 +535,9 @@ def get_transactions(
     SELECT t.*, l.name as loan_name, l.loan_type as loan_type
     FROM transactions t
     LEFT JOIN loans l ON t.loan_id = l.id
-    WHERE 1=1
+    WHERE (t.user_id = ? OR t.user_id IS NULL)
     """
-    params = []
+    params = [current_user.id]
 
     alias_map = get_bank_alias_map()
 
@@ -523,7 +600,7 @@ def get_transactions(
     return {"transactions": rows, "count": len(rows)}
 
 @app.post("/api/transactions")
-def create_transaction(tx: TransactionCreate):
+def create_transaction(tx: TransactionCreate, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -545,11 +622,11 @@ def create_transaction(tx: TransactionCreate):
 
     cursor.execute("""
     INSERT INTO transactions (
-        date, account, description, raw_description, amount, currency,
+        user_id, date, account, description, raw_description, amount, currency,
         category, is_reimbursable, reimbursement_status, needs_clarification,
         clarification_question, confidence, notes
-    ) VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?)
-    """, (tx.date, tx.account, tx.description, tx.description, tx.amount, cat, is_reimb, reimb_status, needs_clarif, question, confidence, tx.notes))
+    ) VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?)
+    """, (current_user.id, tx.date, tx.account, tx.description, tx.description, tx.amount, cat, is_reimb, reimb_status, needs_clarif, question, confidence, tx.notes))
 
     tx_id = cursor.lastrowid
     conn.commit()
@@ -558,7 +635,7 @@ def create_transaction(tx: TransactionCreate):
     return {"id": tx_id, "status": "created", "category": cat, "is_reimbursable": is_reimb}
 
 @app.put("/api/transactions/{tx_id}")
-def update_transaction(tx_id: int, update: TransactionUpdate):
+def update_transaction(tx_id: int, update: TransactionUpdate, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -596,18 +673,18 @@ def update_transaction(tx_id: int, update: TransactionUpdate):
         conn.close()
         return {"status": "no change"}
 
-    params.append(tx_id)
-    cursor.execute(f"UPDATE transactions SET {', '.join(updates)} WHERE id = ?", params)
+    params.extend([tx_id, current_user.id])
+    cursor.execute(f"UPDATE transactions SET {', '.join(updates)} WHERE id = ? AND (user_id = ? OR user_id IS NULL)", params)
     conn.commit()
     conn.close()
 
     return {"status": "updated", "id": tx_id}
 
 @app.delete("/api/transactions/{tx_id}")
-def delete_transaction(tx_id: int):
+def delete_transaction(tx_id: int, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM transactions WHERE id = ?", (tx_id,))
+    cursor.execute("DELETE FROM transactions WHERE id = ? AND (user_id = ? OR user_id IS NULL)", (tx_id, current_user.id))
     conn.commit()
     conn.close()
     return {"status": "deleted", "id": tx_id}
@@ -1572,15 +1649,24 @@ def search_loan_candidates(q: str = "", limit: int = 60):
 # --- Multi-Month Batch Upload with Deduplication & Auto Bank Detection ---
 
 @app.post("/api/upload")
-def upload_statement(
+async def upload_statement(
     file: UploadFile = File(...),
-    account: str = Form("Auto")
+    account: str = Form("Auto"),
+    current_user: User = Depends(get_current_user)
 ):
+    MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25 MB RAM guard limit
     filename = file.filename or ""
     try:
-        content_bytes = file.file.read()
+        content_bytes = await file.read()
     except Exception:
         content_bytes = b""
+
+    if len(content_bytes) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="El archivo excede el tamaño máximo permitido de 25 MB para procesamiento seguro en memoria RAM."
+        )
+
     target_account = account if (account and account != "Auto") else "Auto"
 
     fn_lower = filename.lower()
@@ -1620,6 +1706,9 @@ def upload_statement(
         # If CSV extraction produced 0 transactions, fallback to Excel parser
         if not parsed_txs:
             parsed_txs = parse_excel_content(content_bytes, default_account=target_account, filename=filename)
+
+    # In-memory processing cleanup: free raw byte buffer
+    del content_bytes
 
     if not parsed_txs:
         raise HTTPException(status_code=400, detail="No se pudieron extraer transacciones del extracto. Revisa el formato.")
@@ -1692,7 +1781,8 @@ def upload_statement(
         WHERE account = ? 
           AND abs(amount - ?) < 0.01
           AND abs(julianday(date) - julianday(?)) <= 1.5
-        """, (tx["account"], tx["amount"], tx["date"]))
+          AND (user_id = ? OR user_id IS NULL)
+        """, (tx["account"], tx["amount"], tx["date"], current_user.id))
         candidates = cursor.fetchall()
 
         is_duplicate = False
@@ -1734,11 +1824,12 @@ def upload_statement(
 
         cursor.execute("""
         INSERT INTO transactions (
-            date, account, description, raw_description, amount, balance, currency,
+            user_id, date, account, description, raw_description, amount, balance, currency,
             category, is_reimbursable, reimbursement_status, needs_clarification,
             clarification_question, confidence, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
+            current_user.id,
             tx["date"],
             tx["account"],
             tx["description"],
@@ -1759,8 +1850,8 @@ def upload_statement(
         if analysis["needs_clarification"]:
             flagged_doubts += 1
 
-    # Update account balances dynamically in real time across all accounts
-    sync_realtime_account_balances(conn)
+    # Update account balances dynamically in real time across accounts for this tenant
+    sync_realtime_account_balances(conn, user_id=current_user.id)
 
     conn.commit()
     conn.close()

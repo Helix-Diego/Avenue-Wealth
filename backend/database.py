@@ -22,29 +22,45 @@ if not ROOT_DIR:
 
 def resolve_db_path():
     # 1. Environment variable override (used by tests or custom deployment)
-    if os.environ.get("SPEND_AGENT_DB_PATH"):
-        p = os.path.abspath(os.environ["SPEND_AGENT_DB_PATH"])
+    custom_path = os.environ.get("AVENUE_WEALTH_DB_PATH") or os.environ.get("SPEND_AGENT_DB_PATH")
+    if custom_path:
+        p = os.path.abspath(custom_path)
         os.makedirs(os.path.dirname(p), exist_ok=True)
         return p
 
-    # 2. Portable mode: if explicitly requested via SPEND_AGENT_PORTABLE=1
-    if os.environ.get("SPEND_AGENT_PORTABLE", "0") == "1":
+    # 2. Portable mode: if explicitly requested via PORTABLE=1
+    if os.environ.get("AVENUE_WEALTH_PORTABLE", "0") == "1" or os.environ.get("SPEND_AGENT_PORTABLE", "0") == "1":
         d = os.path.join(ROOT_DIR, "data")
         os.makedirs(d, exist_ok=True)
-        return os.path.join(d, "bank_agent.db")
+        return os.path.join(d, "avenue_wealth.db")
 
     # 3. macOS / standard user profile directory
-    # On macOS: ~/Library/Application Support/SpendAgent/bank_agent.db
-    # On other systems: ~/.spendagent/bank_agent.db
     if sys.platform == "darwin":
-        app_support = os.path.expanduser("~/Library/Application Support/SpendAgent")
+        app_support = os.path.expanduser("~/Library/Application Support/AvenueWealth")
+        legacy_support = os.path.expanduser("~/Library/Application Support/SpendAgent")
     else:
-        app_support = os.path.expanduser("~/.spendagent")
+        app_support = os.path.expanduser("~/.avenuewealth")
+        legacy_support = os.path.expanduser("~/.spendagent")
 
-    user_db_path = os.path.join(app_support, "bank_agent.db")
+    user_db_path = os.path.join(app_support, "avenue_wealth.db")
+    legacy_db_path = os.path.join(legacy_support, "bank_agent.db")
     local_db_path = os.path.join(ROOT_DIR, "data", "bank_agent.db")
 
     os.makedirs(app_support, exist_ok=True)
+
+    # Auto-migration from legacy paths if new DB doesn't exist
+    if not os.path.exists(user_db_path):
+        import shutil
+        source = None
+        if os.path.exists(legacy_db_path) and os.path.getsize(legacy_db_path) > 0:
+            source = legacy_db_path
+        elif os.path.exists(local_db_path) and os.path.getsize(local_db_path) > 0:
+            source = local_db_path
+        if source:
+            try:
+                shutil.copy2(source, user_db_path)
+            except Exception as e:
+                print(f"Aviso migrando base de datos: {e}")
 
     # Auto-migration:
     # If Application Support DB does not exist, but local data/bank_agent.db exists and has content,
@@ -116,6 +132,23 @@ def restore_db(file_bytes: bytes) -> bool:
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
+
+    # 0. Users & RBAC profiles table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        full_name TEXT DEFAULT 'Usuario',
+        role TEXT NOT NULL DEFAULT 'user',
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cursor.execute("""
+    INSERT OR IGNORE INTO users (id, email, full_name, role, is_active)
+    VALUES ('00000000-0000-0000-0000-000000000000', 'admin@avenuewealth.local', 'Administrador Principal', 'admin', 1)
+    """)
 
     # 1. Transactions table
     cursor.execute("""
@@ -320,6 +353,22 @@ def init_db():
     except sqlite3.OperationalError:
         pass
 
+    # Ensure multi-tenant user_id column exists on all tenant tables
+    for tbl in ["transactions", "category_rules", "categories", "bank_accounts", "loans", "portfolio_stocks", "fund_contributions", "user_settings"]:
+        try:
+            cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN user_id TEXT DEFAULT '00000000-0000-0000-0000-000000000000'")
+        except sqlite3.OperationalError:
+            pass
+
+    # Performance indexes for tenant-isolated queries
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tx_user_date ON transactions(user_id, date)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_cat_rules_user ON category_rules(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_accounts_user ON bank_accounts(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_loans_user ON loans(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_stocks_user ON portfolio_stocks(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_funds_user ON fund_contributions(user_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_settings_user ON user_settings(user_id, key)")
+
     # Seed default categories if empty
     cursor.execute("SELECT COUNT(*) FROM categories")
     if cursor.fetchone()[0] == 0:
@@ -460,59 +509,144 @@ def init_db():
 
 # --- Settings & Categories Helper Functions ---
 
-def get_setting(key: str, default: str = None) -> str:
+# --- User & RBAC Management Helper Functions ---
+
+def get_user_by_id(user_id: str):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT value FROM user_settings WHERE key = ?", (key,))
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
     row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_user_by_email(email: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def upsert_user(user_id: str, email: str, full_name: str = "Usuario", role: str = "user"):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    INSERT INTO users (id, email, full_name, role, is_active)
+    VALUES (?, ?, ?, ?, 1)
+    ON CONFLICT(id) DO UPDATE SET
+        email = excluded.email,
+        full_name = COALESCE(excluded.full_name, users.full_name),
+        updated_at = CURRENT_TIMESTAMP
+    """, (user_id, email, full_name, role))
+    conn.commit()
+    conn.close()
+    return {"id": user_id, "email": email, "full_name": full_name, "role": role}
+
+def list_users(limit: int = 50, offset: int = 0):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT u.id, u.email, u.full_name, u.role, u.is_active, u.created_at,
+           COUNT(t.id) as transaction_count
+    FROM users u
+    LEFT JOIN transactions t ON t.user_id = u.id
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+    LIMIT ? OFFSET ?
+    """, (limit, offset))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+
+def update_user_role(user_id: str, new_role: str):
+    if new_role not in ["admin", "user", "advisor", "auditor"]:
+        raise ValueError("Rol no válido.")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (new_role, user_id))
+    conn.commit()
+    conn.close()
+    return {"id": user_id, "role": new_role}
+
+def get_system_stats():
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM transactions")
+    total_txs = cursor.fetchone()[0]
+    cursor.execute("SELECT COALESCE(SUM(ABS(amount)), 0.0) FROM transactions")
+    total_volume = round(float(cursor.fetchone()[0] or 0.0), 2)
+    cursor.execute("SELECT COUNT(DISTINCT user_id) FROM transactions")
+    active_tenants = cursor.fetchone()[0]
+    conn.close()
+    return {
+        "total_users": total_users,
+        "total_transactions": total_txs,
+        "total_volume_eur": total_volume,
+        "active_tenants": active_tenants
+    }
+
+# --- Settings & Categories Helper Functions ---
+
+def get_setting(key: str, default: str = None, user_id: str = "00000000-0000-0000-0000-000000000000") -> str:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM user_settings WHERE key = ? AND user_id = ?", (key, user_id))
+    row = cursor.fetchone()
+    if not row:
+        cursor.execute("SELECT value FROM user_settings WHERE key = ? AND (user_id IS NULL OR user_id = '00000000-0000-0000-0000-000000000000')", (key,))
+        row = cursor.fetchone()
     conn.close()
     return row[0] if row else default
 
-def set_setting(key: str, value: str):
+def set_setting(key: str, value: str, user_id: str = "00000000-0000-0000-0000-000000000000"):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO user_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
+    cursor.execute("DELETE FROM user_settings WHERE key = ? AND user_id = ?", (key, user_id))
+    cursor.execute("INSERT INTO user_settings (key, value, user_id) VALUES (?, ?, ?)", (key, str(value), user_id))
     conn.commit()
     conn.close()
 
-def get_all_settings() -> dict:
+def get_all_settings(user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM user_settings")
+    cursor.execute("SELECT key, value FROM user_settings WHERE user_id = ? OR user_id IS NULL", (user_id,))
     rows = cursor.fetchall()
     conn.close()
     return {r["key"]: r["value"] for r in rows}
 
-def get_categories_list() -> list:
+def get_categories_list(user_id: str = "00000000-0000-0000-0000-000000000000") -> list:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
     SELECT c.*, COUNT(t.id) as tx_count
     FROM categories c
-    LEFT JOIN transactions t ON t.category = c.name
+    LEFT JOIN transactions t ON t.category = c.name AND (t.user_id = ? OR t.user_id IS NULL)
+    WHERE c.user_id = ? OR c.user_id IS NULL OR c.is_system = 1
     GROUP BY c.id
     ORDER BY c.name ASC
-    """)
+    """, (user_id, user_id))
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
 
-def add_category(name: str, color: str = "#64748B", icon: str = "Tag") -> dict:
+def add_category(name: str, color: str = "#64748B", icon: str = "Tag", user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     clean_name = name.strip()
     if not clean_name:
         raise ValueError("El nombre de la categoría no puede estar vacío.")
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO categories (name, color, icon, is_system)
-    VALUES (?, ?, ?, 0)
-    """, (clean_name, color, icon))
+    INSERT INTO categories (name, color, icon, is_system, user_id)
+    VALUES (?, ?, ?, 0, ?)
+    """, (clean_name, color, icon, user_id))
     new_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    return {"id": new_id, "name": clean_name, "color": color, "icon": icon, "is_system": 0}
+    return {"id": new_id, "name": clean_name, "color": color, "icon": icon, "is_system": 0, "user_id": user_id}
 
-def update_category(old_name: str, new_name: str, color: str = None, icon: str = None) -> dict:
+def update_category(old_name: str, new_name: str, color: str = None, icon: str = None, user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     conn = get_connection()
     cursor = conn.cursor()
     updates = []
@@ -530,26 +664,24 @@ def update_category(old_name: str, new_name: str, color: str = None, icon: str =
         params.append(old_name)
         cursor.execute(f"UPDATE categories SET {', '.join(updates)} WHERE name = ?", params)
         if new_name and new_name.strip() != old_name:
-            cursor.execute("UPDATE transactions SET category = ? WHERE category = ?", (new_name.strip(), old_name))
-            cursor.execute("UPDATE category_rules SET category = ? WHERE category = ?", (new_name.strip(), old_name))
+            cursor.execute("UPDATE transactions SET category = ? WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (new_name.strip(), old_name, user_id))
+            cursor.execute("UPDATE category_rules SET category = ? WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (new_name.strip(), old_name, user_id))
     conn.commit()
     conn.close()
     return {"status": "updated", "old_name": old_name, "new_name": new_name or old_name}
 
-def delete_category(name: str, fallback_category: str = "Otras compras") -> dict:
+def delete_category(name: str, fallback_category: str = "Otras compras", user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     conn = get_connection()
     cursor = conn.cursor()
-    # Check if category exists
     cursor.execute("SELECT id FROM categories WHERE name = ?", (name,))
     cat = cursor.fetchone()
     if not cat:
         conn.close()
         raise ValueError(f"La categoría '{name}' no existe.")
 
-    # Reassign existing transactions to fallback category
-    cursor.execute("UPDATE transactions SET category = ? WHERE category = ?", (fallback_category, name))
+    cursor.execute("UPDATE transactions SET category = ? WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (fallback_category, name, user_id))
     reassigned_count = cursor.rowcount
-    cursor.execute("DELETE FROM category_rules WHERE category = ?", (name,))
+    cursor.execute("DELETE FROM category_rules WHERE category = ? AND (user_id = ? OR user_id IS NULL)", (name, user_id))
     cursor.execute("DELETE FROM categories WHERE name = ?", (name,))
     conn.commit()
     conn.close()
@@ -631,38 +763,41 @@ def get_bank_alias_map() -> dict:
                 alias_map["myinvestor"] = alias.strip()
     return alias_map
 
-def clean_all_transactions(keep_settings: bool = True):
+def clean_all_transactions(keep_settings: bool = True, user_id: str = None):
     """
-    Completely wipes all personal transactions, loans, credit cards,
-    and portfolio holdings, giving the user a fresh, clean slate.
+    Completely wipes transactions, loans, credit cards, and portfolio holdings
+    scoped to a specific user (or all if user_id is None or 'all').
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM transactions")
-    cursor.execute("DELETE FROM loans")
-    cursor.execute("DELETE FROM fund_contributions")
-    cursor.execute("DELETE FROM portfolio_stocks")
-    cursor.execute("DELETE FROM bank_accounts")
-    cursor.execute("DELETE FROM fund_info")
-    cursor.execute("UPDATE supported_banks SET enabled = 0")
-    # Always delete forecast and savings targets so the app comes 100% empty
-    cursor.execute("DELETE FROM user_settings WHERE key LIKE 'forecast_%' OR key = 'monthly_salary_target'")
-    if not keep_settings:
-        cursor.execute("DELETE FROM user_settings WHERE key NOT IN ('deepseek_api_key', 'finnhub_api_key')")
+    if user_id and user_id != "all":
+        cursor.execute("DELETE FROM transactions WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM loans WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM fund_contributions WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM portfolio_stocks WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM bank_accounts WHERE user_id = ?", (user_id,))
+        cursor.execute("DELETE FROM user_settings WHERE user_id = ? AND (key LIKE 'forecast_%' OR key = 'monthly_salary_target')", (user_id,))
+        if not keep_settings:
+            cursor.execute("DELETE FROM user_settings WHERE user_id = ? AND key NOT IN ('deepseek_api_key', 'finnhub_api_key')", (user_id,))
+    else:
+        cursor.execute("DELETE FROM transactions")
+        cursor.execute("DELETE FROM loans")
+        cursor.execute("DELETE FROM fund_contributions")
+        cursor.execute("DELETE FROM portfolio_stocks")
+        cursor.execute("DELETE FROM bank_accounts")
+        cursor.execute("DELETE FROM fund_info")
+        cursor.execute("UPDATE supported_banks SET enabled = 0")
+        cursor.execute("DELETE FROM user_settings WHERE key LIKE 'forecast_%' OR key = 'monthly_salary_target'")
+        if not keep_settings:
+            cursor.execute("DELETE FROM user_settings WHERE key NOT IN ('deepseek_api_key', 'finnhub_api_key')")
     conn.commit()
     conn.close()
 
 
-def sync_realtime_account_balances(conn=None) -> list:
+def sync_realtime_account_balances(conn=None, user_id: str = None) -> list:
     """
-    Recalculates real-time balances for all bank accounts dynamically:
-    1. For accounts with explicit statement checkpoints (`balance IS NOT NULL` in transactions),
-       takes the most recent checkpoint (MAX date, MAX id) and adds all subsequent transaction amounts:
-       realtime_balance = checkpoint_balance + sum(subsequent_transactions)
-    2. For accounts without statement balance checkpoints (e.g. N26, credit cards, or manual accounts),
-       computes: initial_balance + sum(all_transactions_for_this_account).
-    3. Updates `bank_accounts` table (`current_balance`, `last_transaction_date`, `last_imported_at`).
-    Returns list of updated accounts.
+    Recalculates real-time balances for bank accounts dynamically,
+    scoped to a specific user if user_id is provided.
     """
     should_close = False
     if conn is None:
@@ -672,17 +807,29 @@ def sync_realtime_account_balances(conn=None) -> list:
     cursor = conn.cursor()
 
     # Ensure any accounts present in transactions exist in bank_accounts
-    cursor.execute("SELECT DISTINCT account FROM transactions WHERE account IS NOT NULL AND account != ''")
+    if user_id:
+        cursor.execute("SELECT DISTINCT account FROM transactions WHERE account IS NOT NULL AND account != '' AND user_id = ?", (user_id,))
+    else:
+        cursor.execute("SELECT DISTINCT account FROM transactions WHERE account IS NOT NULL AND account != ''")
     tx_accounts = [r[0] for r in cursor.fetchall()]
     for acc in tx_accounts:
         is_cc = 1 if any(w in acc.lower() for w in ["tarjeta", "amex", "american express", "credit", "iberia cards"]) else 0
         acc_type = "credit_card" if is_cc else ("savings" if "ahorro" in acc.lower() else "checking")
-        cursor.execute("""
-        INSERT OR IGNORE INTO bank_accounts (account_name, account_type, current_balance, currency, is_credit_card)
-        VALUES (?, ?, 0.0, 'EUR', ?)
-        """, (acc, acc_type, is_cc))
+        if user_id:
+            cursor.execute("""
+            INSERT OR IGNORE INTO bank_accounts (account_name, account_type, current_balance, currency, is_credit_card, user_id)
+            VALUES (?, ?, 0.0, 'EUR', ?, ?)
+            """, (acc, acc_type, is_cc, user_id))
+        else:
+            cursor.execute("""
+            INSERT OR IGNORE INTO bank_accounts (account_name, account_type, current_balance, currency, is_credit_card)
+            VALUES (?, ?, 0.0, 'EUR', ?)
+            """, (acc, acc_type, is_cc))
 
-    cursor.execute("SELECT account_name, account_type, is_credit_card, COALESCE(initial_balance, 0.0) as initial_bal FROM bank_accounts")
+    if user_id:
+        cursor.execute("SELECT account_name, account_type, is_credit_card, COALESCE(initial_balance, 0.0) as initial_bal FROM bank_accounts WHERE user_id = ?", (user_id,))
+    else:
+        cursor.execute("SELECT account_name, account_type, is_credit_card, COALESCE(initial_balance, 0.0) as initial_bal FROM bank_accounts")
     accounts = cursor.fetchall()
 
     updated = []
@@ -691,15 +838,25 @@ def sync_realtime_account_balances(conn=None) -> list:
         init_bal = float(acc_row["initial_bal"] or 0.0)
 
         # Check for anchor transaction with explicit balance
-        cursor.execute("""
-            SELECT date, id, balance FROM transactions
-            WHERE account = ? AND balance IS NOT NULL
-            ORDER BY date DESC, id DESC LIMIT 1
-        """, (acc_name,))
+        if user_id:
+            cursor.execute("""
+                SELECT date, id, balance FROM transactions
+                WHERE account = ? AND balance IS NOT NULL AND user_id = ?
+                ORDER BY date DESC, id DESC LIMIT 1
+            """, (acc_name, user_id))
+        else:
+            cursor.execute("""
+                SELECT date, id, balance FROM transactions
+                WHERE account = ? AND balance IS NOT NULL
+                ORDER BY date DESC, id DESC LIMIT 1
+            """, (acc_name,))
         anchor = cursor.fetchone()
 
         # Get latest transaction date for this account
-        cursor.execute("SELECT MAX(date) FROM transactions WHERE account = ?", (acc_name,))
+        if user_id:
+            cursor.execute("SELECT MAX(date) FROM transactions WHERE account = ? AND user_id = ?", (acc_name, user_id))
+        else:
+            cursor.execute("SELECT MAX(date) FROM transactions WHERE account = ?", (acc_name,))
         max_date_row = cursor.fetchone()
         latest_tx_date = max_date_row[0] if max_date_row and max_date_row[0] else None
 
@@ -708,23 +865,40 @@ def sync_realtime_account_balances(conn=None) -> list:
             anchor_id = anchor["id"]
             anchor_bal = float(anchor["balance"])
 
-            cursor.execute("""
-                SELECT COALESCE(SUM(amount), 0.0) FROM transactions
-                WHERE account = ? AND (date > ? OR (date = ? AND id > ?))
-            """, (acc_name, anchor_date, anchor_date, anchor_id))
+            if user_id:
+                cursor.execute("""
+                    SELECT COALESCE(SUM(amount), 0.0) FROM transactions
+                    WHERE account = ? AND (date > ? OR (date = ? AND id > ?)) AND user_id = ?
+                """, (acc_name, anchor_date, anchor_date, anchor_id, user_id))
+            else:
+                cursor.execute("""
+                    SELECT COALESCE(SUM(amount), 0.0) FROM transactions
+                    WHERE account = ? AND (date > ? OR (date = ? AND id > ?))
+                """, (acc_name, anchor_date, anchor_date, anchor_id))
             subsequent_sum = float(cursor.fetchone()[0] or 0.0)
             real_balance = round(anchor_bal + subsequent_sum, 2)
         else:
-            cursor.execute("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE account = ?", (acc_name,))
+            if user_id:
+                cursor.execute("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE account = ? AND user_id = ?", (acc_name, user_id))
+            else:
+                cursor.execute("SELECT COALESCE(SUM(amount), 0.0) FROM transactions WHERE account = ?", (acc_name,))
             tx_sum = float(cursor.fetchone()[0] or 0.0)
             real_balance = round(init_bal + tx_sum, 2)
 
-        cursor.execute("""
-        UPDATE bank_accounts
-        SET current_balance = ?,
-            last_transaction_date = COALESCE(?, last_transaction_date)
-        WHERE account_name = ?
-        """, (real_balance, latest_tx_date, acc_name))
+        if user_id:
+            cursor.execute("""
+            UPDATE bank_accounts
+            SET current_balance = ?,
+                last_transaction_date = COALESCE(?, last_transaction_date)
+            WHERE account_name = ? AND user_id = ?
+            """, (real_balance, latest_tx_date, acc_name, user_id))
+        else:
+            cursor.execute("""
+            UPDATE bank_accounts
+            SET current_balance = ?,
+                last_transaction_date = COALESCE(?, last_transaction_date)
+            WHERE account_name = ?
+            """, (real_balance, latest_tx_date, acc_name))
 
         updated.append({
             "account_name": acc_name,
