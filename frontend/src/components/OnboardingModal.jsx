@@ -50,8 +50,12 @@ export default function OnboardingModal({
 
   // Step 2: Auth State
   const [authMode, setAuthMode] = useState('google'); // 'google' | 'email' | 'guest'
+  const [emailTab, setEmailTab] = useState('register'); // 'register' | 'login'
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
@@ -146,24 +150,55 @@ export default function OnboardingModal({
 
   // Email / Password Handler
   const handleEmailAuth = async (isSignUp = false) => {
-    if (!email || !password) {
-      setAuthError('Por favor introduce email y contraseña.');
-      return;
-    }
-    setAuthLoading(true);
     setAuthError('');
     setAuthSuccess('');
+
+    if (isSignUp) {
+      if (!firstName.trim()) {
+        setAuthError('Por favor introduce tu nombre.');
+        return;
+      }
+      if (!lastName.trim()) {
+        setAuthError('Por favor introduce tus apellidos.');
+        return;
+      }
+      if (!email || !password) {
+        setAuthError('Por favor introduce email y contraseña.');
+        return;
+      }
+      if (password.length < 6) {
+        setAuthError('La contraseña debe tener al menos 6 caracteres por seguridad.');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setAuthError('Las contraseñas no coinciden. Por favor verifícalas.');
+        return;
+      }
+    } else {
+      if (!email || !password) {
+        setAuthError('Por favor introduce tu email y contraseña.');
+        return;
+      }
+    }
+
+    setAuthLoading(true);
     try {
       if (isSignUp) {
+        const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { full_name: name }
+            data: {
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              full_name: fullName
+            }
           }
         });
         if (error) throw error;
-        setAuthSuccess('Cuenta creada. Revisa tu email para confirmar o continúa al siguiente paso.');
+        setName(fullName);
+        setAuthSuccess('¡Cuenta creada correctamente con cifrado seguro! Puedes continuar al siguiente paso.');
         if (data?.user) setSessionUser(data.user);
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -501,66 +536,193 @@ export default function OnboardingModal({
                         </span>
                       </div>
 
-                      {/* Email Tabs */}
-                      <div className="space-y-3">
-                        <div>
-                          <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                            Correo Electrónico
-                          </label>
-                          <div className="relative">
-                            <Mail className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
-                            <input
-                              type="email"
-                              value={email}
-                              onChange={(e) => setEmail(e.target.value)}
-                              placeholder="tu@email.com"
-                              className="w-full pl-9 pr-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                            />
+                      {/* Email Auth Mode Tabs */}
+                      <div className="flex rounded-xl bg-neutral-100 dark:bg-neutral-800/80 p-1 mb-2">
+                        <button
+                          type="button"
+                          onClick={() => { setEmailTab('register'); setAuthError(''); }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                            emailTab === 'register'
+                              ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                              : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Crear Cuenta Nueva
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEmailTab('login'); setAuthError(''); }}
+                          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                            emailTab === 'login'
+                              ? 'bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-xs'
+                              : 'text-neutral-500 hover:text-neutral-900 dark:hover:text-white'
+                          }`}
+                        >
+                          Ya tengo cuenta
+                        </button>
+                      </div>
+
+                      {/* Registration Form */}
+                      {emailTab === 'register' ? (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                                Nombre
+                              </label>
+                              <div className="relative">
+                                <User className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                                <input
+                                  type="text"
+                                  value={firstName}
+                                  onChange={(e) => setFirstName(e.target.value)}
+                                  placeholder="Ej. Diego"
+                                  className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                                Apellidos
+                              </label>
+                              <div className="relative">
+                                <User className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                                <input
+                                  type="text"
+                                  value={lastName}
+                                  onChange={(e) => setLastName(e.target.value)}
+                                  placeholder="Ej. Hernández"
+                                  className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                              </div>
+                            </div>
                           </div>
-                        </div>
 
-                        <div>
-                          <label className="block text-xs font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-                            Contraseña
-                          </label>
-                          <div className="relative">
-                            <Lock className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
-                            <input
-                              type="password"
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              placeholder="••••••••"
-                              className="w-full pl-9 pr-3 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                            />
+                          <div>
+                            <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                              Correo Electrónico
+                            </label>
+                            <div className="relative">
+                              <Mail className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                              <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="tu@email.com"
+                                className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
                           </div>
-                        </div>
 
-                        {authError && (
-                          <p className="text-xs text-rose-500 font-medium">{authError}</p>
-                        )}
-                        {authSuccess && (
-                          <p className="text-xs text-emerald-500 font-medium">{authSuccess}</p>
-                        )}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                                Contraseña
+                              </label>
+                              <div className="relative">
+                                <Lock className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                                <input
+                                  type="password"
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  placeholder="Mín. 6 caracteres"
+                                  className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                                Confirmar Contraseña
+                              </label>
+                              <div className="relative">
+                                <Lock className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                                <input
+                                  type="password"
+                                  value={confirmPassword}
+                                  onChange={(e) => setConfirmPassword(e.target.value)}
+                                  placeholder="Repite la contraseña"
+                                  className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                                />
+                              </div>
+                            </div>
+                          </div>
 
-                        <div className="flex gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleEmailAuth(false)}
-                            disabled={authLoading}
-                            className="flex-1 py-2 rounded-lg bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-semibold hover:opacity-90 transition-all cursor-pointer"
-                          >
-                            Iniciar Sesión
-                          </button>
+                          {/* Security Notice */}
+                          <div className="p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/40 text-[11px] text-blue-800 dark:text-blue-300 flex items-start gap-2">
+                            <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                            <span>
+                              <strong>Privacidad garantizada:</strong> Tu contraseña se cifra con hash criptográfico <code>bcrypt</code>. Tus transacciones quedan protegidas mediante Row-Level Security (RLS) en Supabase UE.
+                            </span>
+                          </div>
+
+                          {authError && (
+                            <p className="text-xs text-rose-500 font-medium">{authError}</p>
+                          )}
+                          {authSuccess && (
+                            <p className="text-xs text-emerald-500 font-medium">{authSuccess}</p>
+                          )}
+
                           <button
                             type="button"
                             onClick={() => handleEmailAuth(true)}
                             disabled={authLoading}
-                            className="flex-1 py-2 rounded-lg border border-neutral-300 dark:border-neutral-700 text-xs font-semibold text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-all cursor-pointer"
+                            className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md transition-all active:scale-[0.99] cursor-pointer"
                           >
-                            Crear Cuenta
+                            {authLoading ? 'Creando cuenta segura...' : 'Crear Mi Cuenta Segura'}
                           </button>
                         </div>
-                      </div>
+                      ) : (
+                        /* Login Form */
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                              Correo Electrónico
+                            </label>
+                            <div className="relative">
+                              <Mail className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                              <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder="tu@email.com"
+                                className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+                              Contraseña
+                            </label>
+                            <div className="relative">
+                              <Lock className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 top-2.5" />
+                              <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder="••••••••"
+                                className="w-full pl-8 pr-2 py-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white/70 dark:bg-neutral-900/60 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          {authError && (
+                            <p className="text-xs text-rose-500 font-medium">{authError}</p>
+                          )}
+                          {authSuccess && (
+                            <p className="text-xs text-emerald-500 font-medium">{authSuccess}</p>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => handleEmailAuth(false)}
+                            disabled={authLoading}
+                            className="w-full py-2.5 rounded-xl bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 text-xs font-bold hover:opacity-90 shadow-md transition-all active:scale-[0.99] cursor-pointer"
+                          >
+                            {authLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
+                          </button>
+                        </div>
+                      )}
 
                       {/* Guest / Local Option */}
                       <div className="pt-2 text-center">
