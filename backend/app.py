@@ -1572,12 +1572,15 @@ def search_loan_candidates(q: str = "", limit: int = 60):
 # --- Multi-Month Batch Upload with Deduplication & Auto Bank Detection ---
 
 @app.post("/api/upload")
-async def upload_statement(
+def upload_statement(
     file: UploadFile = File(...),
     account: str = Form("Auto")
 ):
     filename = file.filename or ""
-    content_bytes = await file.read()
+    try:
+        content_bytes = file.file.read()
+    except Exception:
+        content_bytes = b""
     target_account = account if (account and account != "Auto") else "Auto"
 
     fn_lower = filename.lower()
@@ -1621,14 +1624,14 @@ async def upload_statement(
     if not parsed_txs:
         raise HTTPException(status_code=400, detail="No se pudieron extraer transacciones del extracto. Revisa el formato.")
 
-    # Check if the detected or specified bank is disabled in user settings
+    # Check if the detected or specified bank is supported; auto-enable it if user uploaded it
     try:
         supported_map = {b["id"]: b for b in get_supported_banks()}
         check_acc = (target_account if target_account != "Auto" else (parsed_txs[0]["account"] if parsed_txs else "")).lower()
         matched_bank_id = None
         if "santander" in check_acc:
             matched_bank_id = "santander"
-        elif "caixa" in check_acc:
+        elif "caixa" in check_acc or "imagin" in check_acc:
             matched_bank_id = "caixabank"
         elif "revolut" in check_acc:
             matched_bank_id = "revolut"
@@ -1647,16 +1650,11 @@ async def upload_statement(
         elif "myinvestor" in check_acc:
             matched_bank_id = "myinvestor"
 
-        if matched_bank_id and matched_bank_id in supported_map and not supported_map[matched_bank_id].get("enabled"):
-            b_name = supported_map[matched_bank_id].get("name", matched_bank_id)
-            raise HTTPException(
-                status_code=400,
-                detail=f"El banco '{b_name}' está desactivado en tus Ajustes. Actívalo en la pestaña 'Ajustes > Bancos Soportados' para poder importar sus extractos."
-            )
-    except HTTPException:
-        raise
+        if matched_bank_id and matched_bank_id in supported_map:
+            if not supported_map[matched_bank_id].get("enabled"):
+                update_bank_enabled(matched_bank_id, 1)
     except Exception as e:
-        print(f"Bank enabled check note: {e}")
+        print(f"Bank auto-enable note: {e}")
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -1791,15 +1789,23 @@ async def upload_statement(
     if (flagged_doubts + transfer_doubts) > 0:
         msg += f" {flagged_doubts + transfer_doubts} requieren confirmación."
 
+    most_freq_m = sorted(months_count.items(), key=lambda x: x[1], reverse=True)[0][0] if months_count else None
+    detected_list = list(detected_accounts_set)
+    first_detected = detected_list[0] if detected_list else target_account
+
     return {
         "status": "success",
+        "imported": imported,
         "imported_count": imported,
         "duplicates_skipped": duplicates_skipped,
         "flagged_doubts": flagged_doubts + transfer_doubts,
         "paired_transfers": paired_transfers,
         "fund_subscriptions_updated": fund_subs_updated,
         "months_breakdown": months_count,
-        "detected_accounts": list(detected_accounts_set),
+        "breakdown_by_month": months_count,
+        "detected_accounts": detected_list,
+        "account_detected": first_detected,
+        "most_frequent_month": most_freq_m,
         "message": msg
     }
 

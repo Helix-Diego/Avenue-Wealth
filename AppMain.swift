@@ -172,7 +172,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     }
 
     func prepareAndLaunchBackend() {
-        // First check if an existing instance of Spend Agent is already responding
+        // Save or restore projectPath from UserDefaults if moved to /Applications
+        let fm = FileManager.default
+        let ud = UserDefaults.standard
+        if fm.fileExists(atPath: "\(projectPath)/backend/app.py") {
+            ud.set(projectPath, forKey: "SpendAgentRoot")
+        } else if let saved = ud.string(forKey: "SpendAgentRoot"), fm.fileExists(atPath: "\(saved)/backend/app.py") {
+            projectPath = saved
+        } else {
+            let userHome = NSHomeDirectory()
+            let candidates = [
+                "\(userHome)/Downloads/SpendAgent-macOS",
+                "\(userHome)/Desktop/SpendAgent-macOS",
+                "\(userHome)/Documentos/SpendAgent-macOS",
+                "\(userHome)/Documents/SpendAgent-macOS"
+            ]
+            for c in candidates {
+                if fm.fileExists(atPath: "\(c)/backend/app.py") {
+                    projectPath = c
+                    ud.set(c, forKey: "SpendAgentRoot")
+                    break
+                }
+            }
+        }
+
+        // 1. Check if an existing Spend Agent backend is already responding
         for checkPort in 8000...8015 {
             if isPortResponding(port: checkPort) {
                 self.serverPort = checkPort
@@ -181,10 +205,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             }
         }
 
-        let fm = FileManager.default
         let venvPython = "\(projectPath)/venv/bin/python3"
         let pipBin = "\(projectPath)/venv/bin/pip"
         let reqFile = "\(projectPath)/requirements.txt"
+        let installedMarker = "\(projectPath)/venv/.installed"
         
         var customEnv = ProcessInfo.processInfo.environment
         customEnv["BANK_AGENT_ROOT"] = projectPath
@@ -200,7 +224,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
                 return
             }
             DispatchQueue.main.async {
-                self.loadingLabel.stringValue = "📦 Creando entorno virtual Python..."
+                self.loadingLabel.stringValue = "📦 Configurando entorno virtual Spend Agent..."
             }
             let venvProc = Process()
             venvProc.currentDirectoryPath = projectPath
@@ -211,27 +235,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             venvProc.waitUntilExit()
         }
 
-        DispatchQueue.main.async {
-            self.loadingLabel.stringValue = "📦 Verificando dependencias..."
-        }
-        let pipProc = Process()
-        pipProc.currentDirectoryPath = projectPath
-        pipProc.executableURL = URL(fileURLWithPath: pipBin)
-        pipProc.arguments = ["install", "-q", "-r", reqFile]
-        pipProc.environment = customEnv
-        try? pipProc.run()
-        pipProc.waitUntilExit()
+        // Only run pip install if not previously installed
+        if !fm.fileExists(atPath: installedMarker) {
+            DispatchQueue.main.async {
+                self.loadingLabel.stringValue = "📦 Verificando dependencias..."
+            }
+            let pipProc = Process()
+            pipProc.currentDirectoryPath = projectPath
+            pipProc.executableURL = URL(fileURLWithPath: pipBin)
+            pipProc.arguments = ["install", "-q", "-r", reqFile]
+            pipProc.environment = customEnv
+            try? pipProc.run()
+            pipProc.waitUntilExit()
 
-        DispatchQueue.main.async {
-            self.loadingLabel.stringValue = "🔍 Comprobando base de datos..."
+            // Initialize database schema and default settings
+            let seedProc = Process()
+            seedProc.currentDirectoryPath = projectPath
+            seedProc.executableURL = URL(fileURLWithPath: venvPython)
+            seedProc.arguments = ["-m", "backend.seed_data"]
+            seedProc.environment = customEnv
+            try? seedProc.run()
+            seedProc.waitUntilExit()
+
+            fm.createFile(atPath: installedMarker, contents: Data(), attributes: nil)
         }
-        let seedProc = Process()
-        seedProc.currentDirectoryPath = projectPath
-        seedProc.executableURL = URL(fileURLWithPath: venvPython)
-        seedProc.arguments = ["-m", "backend.seed_data"]
-        seedProc.environment = customEnv
-        try? seedProc.run()
-        seedProc.waitUntilExit()
 
         // Find free port starting at 8000
         serverPort = findFreePort(start: 8000)
@@ -241,16 +268,25 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             self.loadingLabel.stringValue = "🚀 Conectando a Spend Agent en puerto \(self.serverPort)..."
         }
 
-        // Launch server process
+        // Launch server process with file logging (NEVER pipe buffer deadlock)
         let serverProcess = Process()
         serverProcess.currentDirectoryPath = projectPath
         serverProcess.executableURL = URL(fileURLWithPath: venvPython)
         serverProcess.arguments = ["\(projectPath)/run_server.py"]
         serverProcess.environment = customEnv
 
-        let pipe = Pipe()
-        serverProcess.standardOutput = pipe
-        serverProcess.standardError = pipe
+        let logPath = "\(projectPath)/spendagent.log"
+        if !fm.fileExists(atPath: logPath) {
+            fm.createFile(atPath: logPath, contents: nil, attributes: nil)
+        }
+        if let logHandle = FileHandle(forWritingAtPath: logPath) {
+            logHandle.seekToEndOfFile()
+            serverProcess.standardOutput = logHandle
+            serverProcess.standardError = logHandle
+        } else {
+            serverProcess.standardOutput = FileHandle.nullDevice
+            serverProcess.standardError = FileHandle.nullDevice
+        }
 
         do {
             try serverProcess.run()
@@ -259,13 +295,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
             print("Failed to run backend: \(error)")
         }
 
-        // Poll until server is ready and responds
+        // Poll until server is ready and responds (up to 30 seconds)
         var attempts = 0
-        while attempts < 40 {
+        while attempts < 60 {
             if isPortResponding(port: serverPort) {
                 break
             }
-            Thread.sleep(forTimeInterval: 0.25)
+            Thread.sleep(forTimeInterval: 0.5)
             attempts += 1
         }
 
@@ -375,6 +411,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigati
     func applicationWillTerminate(_ notification: Notification) {
         backendProcess?.terminate()
         let pidFile = "\(projectPath)/.bank_agent.pid"
+        if let pidContent = try? String(contentsOfFile: pidFile, encoding: .utf8) {
+            let parts = pidContent.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: ":")
+            if let pidStr = parts.first, let pid = Int32(pidStr) {
+                kill(pid, SIGTERM)
+            }
+        }
         try? FileManager.default.removeItem(atPath: pidFile)
     }
 }

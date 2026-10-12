@@ -190,24 +190,26 @@ def detect_account_from_content(full_text: str = "", default_account: str = "Ban
         if is_revolut:
             return ACCOUNT_REVOLUT
 
-    # 3. CaixaBank: signature format (Concepto;Fecha;Importe;Saldo) or filename / bank mentions
-    if "caixabank" in enabled_banks and ("caixa" in fn_lower or "caixabank" in sample or "la caixa" in sample or "lacaixa" in sample or ("concepto;" in sample and "fecha;" in sample and "saldo" in sample)):
-        return ACCOUNT_CAIXA
+    # 3. CaixaBank & ImaginBank: signature format (Concepto;Fecha;Importe;Saldo) or filename / bank mentions
+    if any(k in fn_lower for k in ["caixa", "imagin", "imaginbank"]) or any(k in sample for k in ["caixa", "caixabank", "la caixa", "lacaixa", "imagin", "imaginbank"]):
+        return "ImaginBank" if any(k in fn_lower or k in sample for k in ["imagin", "imaginbank"]) else ACCOUNT_CAIXA
+    if "concepto;" in sample and "fecha;" in sample and "saldo" in sample:
+        return "ImaginBank" if "imagin" in fn_lower else ACCOUNT_CAIXA
 
     # 4. Other specific banks
-    if "bbva" in enabled_banks and "bbva" in sample:
+    if "bbva" in fn_lower or "bbva" in sample:
         return ACCOUNT_BBVA
-    if "openbank" in enabled_banks and "openbank" in sample:
+    if "openbank" in fn_lower or "openbank" in sample:
         return ACCOUNT_OPENBANK
-    if "myinvestor" in enabled_banks and any(k in sample for k in ["myinvestor", "my investor", "fidelity msci world", "transferencia desde myinvestor"]):
+    if any(k in fn_lower or k in sample for k in ["myinvestor", "my investor", "fidelity msci world", "transferencia desde myinvestor"]):
         return ACCOUNT_MYINVESTOR
-    if "n26" in enabled_banks and "n26" in sample:
+    if "n26" in fn_lower or "n26" in sample:
         return ACCOUNT_N26
-    if "iberia_cards" in enabled_banks and ("iberia cards" in sample or "iberiacards" in sample):
+    if "iberia cards" in fn_lower or "iberia cards" in sample or "iberiacards" in sample:
         return ACCOUNT_IBERIA_CARDS
-    if "amex" in enabled_banks and ("american express" in sample or "amex" in sample):
+    if "american express" in fn_lower or "american express" in sample or "amex" in fn_lower or "amex" in sample:
         return ACCOUNT_AMEX
-    if "santander" in enabled_banks and "santander" in sample:
+    if "santander" in fn_lower or "santander" in sample:
         return ACCOUNT_SANTANDER_MAIN
 
     return default_account if default_account and default_account != "Auto" else ACCOUNT_GENERIC

@@ -383,22 +383,39 @@ def init_knowledge_base():
     conn.commit()
     conn.close()
 
+_KB_CACHE = None
+
+def get_cached_kb_entries():
+    global _KB_CACHE
+    if _KB_CACHE is None:
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT pattern, category, notes, sample_amount FROM knowledge_base ORDER BY LENGTH(pattern) DESC")
+            _KB_CACHE = [dict(r) for r in cursor.fetchall()]
+            conn.close()
+        except Exception as e:
+            print(f"Error loading KB cache: {e}")
+            _KB_CACHE = []
+    return _KB_CACHE
+
+def invalidate_kb_cache():
+    global _KB_CACHE
+    _KB_CACHE = None
+
 def match_knowledge_base(description: str):
     """
-    Matches description against Diego's Knowledge Base.
-    Returns (category, confidence, notes) or None.
+    Matches description against Knowledge Base using in-memory cached entries.
+    Returns (category, confidence, notes) or None in microseconds.
     """
+    if not description:
+        return None
     desc_upper = description.upper()
-
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT pattern, category, notes, sample_amount FROM knowledge_base ORDER BY LENGTH(pattern) DESC")
-    entries = cursor.fetchall()
-    conn.close()
+    entries = get_cached_kb_entries()
 
     for row in entries:
         pattern = row["pattern"]
-        if pattern in desc_upper:
+        if pattern and pattern in desc_upper:
             return {
                 "category": row["category"],
                 "confidence": 0.98,

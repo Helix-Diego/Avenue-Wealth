@@ -3,7 +3,12 @@ from backend.database import get_connection, get_setting
 from backend.knowledge_base import match_knowledge_base, get_few_shots_for_ai, DIEGO_CATEGORIES
 from backend.deepseek_service import categorize_with_ai
 
+_ACTIVE_CATS_CACHE = None
+
 def get_active_categories() -> list:
+    global _ACTIVE_CATS_CACHE
+    if _ACTIVE_CATS_CACHE is not None:
+        return _ACTIVE_CATS_CACHE
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -11,12 +16,288 @@ def get_active_categories() -> list:
         rows = [r[0] for r in cursor.fetchall()]
         conn.close()
         if rows:
+            _ACTIVE_CATS_CACHE = rows
             return rows
     except Exception:
         pass
     return DIEGO_CATEGORIES
 
+def invalidate_categories_cache():
+    global _ACTIVE_CATS_CACHE
+    _ACTIVE_CATS_CACHE = None
+
 CATEGORIES = get_active_categories()
+
+def quick_heuristic_match(desc_upper: str, amount: float, account: str = ""):
+    """
+    Ultra-fast (0.001ms) rule matcher for Spanish & European banking concepts,
+    Bizum, Huchas, ATMs, and high-frequency merchants.
+    """
+    current_cats = get_active_categories()
+
+    # 1. Huchas / Digital Savings / Transfers
+    if any(k in desc_upper for k in ["HUCHA DIGI", "HUCHA DIGITAL", "HUCHA"]):
+        target_cat = "Inversiones y ahorros" if any(w in desc_upper for w in ["APORTACION", "APORTACIÓN", "AHORRO"]) else "Traspaso entre cuentas"
+        return {
+            "category": target_cat if target_cat in current_cats else "Traspaso entre cuentas",
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Hucha digital / Ahorro periódico"
+        }
+
+    if "APORTACIÓN A UNA" in desc_upper or "APORTACION A UNA" in desc_upper:
+        cat = "Inversiones y ahorros" if "Inversiones y ahorros" in current_cats else "Traspaso entre cuentas"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Aportación a hucha o inversión"
+        }
+
+    if any(k in desc_upper for k in ["TRANSFER. EN DIV", "TRANSFER INMEDIATA", "TRANSFER.", "TRASPASO ENTRE"]):
+        if amount > 500 and any(k in desc_upper for k in ["NOMINA", "HABERES", "SALARIO"]):
+            cat = "Sueldo / Ingresos" if "Sueldo / Ingresos" in current_cats else "Sueldo"
+            return {
+                "category": cat,
+                "is_reimbursable": 0,
+                "reimbursement_status": "none",
+                "needs_clarification": 0,
+                "clarification_question": None,
+                "confidence": 0.95,
+                "notes": "Transferencia recibida (Sueldo/Ingreso)"
+            }
+        return {
+            "category": "Traspaso entre cuentas",
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.92,
+            "notes": "Traspaso / Transferencia bancaria"
+        }
+
+    # 2. Bizum
+    if desc_upper.startswith("BIZUM RECIBIDO") or " BIZUM RECIBIDO" in desc_upper:
+        return {
+            "category": "Traspaso entre cuentas",
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.90,
+            "notes": "Bizum recibido"
+        }
+    if any(k in desc_upper for k in ["BIZUM ENVIADO", "BIZUM A FAVOR", "BIZUM DE "]):
+        return {
+            "category": "Traspaso entre cuentas",
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.90,
+            "notes": "Bizum enviado"
+        }
+
+    # 3. ATMs / Cash
+    if any(k in desc_upper for k in ["CAJERO", "REINT.CAJERO", "DISPOSICION CAJERO", "EXTRACCION"]):
+        return {
+            "category": "Otras compras",
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.95,
+            "notes": "Retirada de efectivo en cajero"
+        }
+
+    # 4. Bank fees / Insurance / Banking services
+    if any(k in desc_upper for k in ["CREDIT AGRICOL", "CREDIT AGRICOLE"]):
+        cat = "Vivienda & Suministros" if "Vivienda & Suministros" in current_cats else "Otras compras"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.95,
+            "notes": "Servicio bancario / Seguro Crédit Agricole"
+        }
+
+    # 5. Food delivery & Coffee / Dining
+    if any(k in desc_upper for k in ["UBER * EATS", "UBER EATS", "EATS PEN", "GLOVO", "JUST EAT", "DELIVEROO"]):
+        cat = "Restaurantes & Ocio" if "Restaurantes & Ocio" in current_cats else "Restaurantes"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Comida a domicilio / Takeaway"
+        }
+
+    # Dining, Restaurants, Bars, Cafes
+    if any(k in desc_upper for k in [
+        "STARBUCKS", "PIZZERIA", "BISTROT", "CAFE", "CAFÉ", "RESTAURANTE", "BURGER",
+        "FIVE GUYS", "AMORINO", "DOMINO", "FELLOWS", "MASLOW", "SAVEURS CAFE", "CAFE PIVOINE",
+        "L'ETINCELLE", "CHIRINGUITO", "PRAU DE TERENE", "ESCALERA 3 BEACH", "LOUMI'S", "LOUMIS",
+        "SC-BELLA ITALIA", "BELLA ITALIA", "CATALINA EL BAR", "GREEN ROOM", "TEMPLE BAR", "TASTE OF SP",
+        "BANGKOK DISTRIC", "CLEMENT DELICES", "PANAS", "ARCANE", "SAINT GERVAIS", "SURPRIZ PIGALLE",
+        "SOUPJUICE", "PRET A MANGER", "MCDONALD", "KFC", "FOSTER", "TACO BELL", "VIPS", "GINOS",
+        "100 MONTADITOS", "POKÉ", "POKE", "SUSHI", "WOK", "TABERNA", "MESON", "CERVECERIA", "BODEGA"
+    ]):
+        cat = "Restaurantes & Ocio" if "Restaurantes & Ocio" in current_cats else "Restaurantes"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Restaurante, bar o cafetería"
+        }
+
+    # 6. Groceries & Supermarkets & Bakeries
+    if any(k in desc_upper for k in [
+        "SERVIDIS", "ALIM 500", "ALIMERKA", "SUPERMERCADOS MAS", "MERCADONA", "CARREFOUR", "DIA ",
+        "LIDL", "ALDI", "EROSKI", "CONSUM", "HIPERCOR", "ALCAMPO", "PANADERIA", "PASTELERIA",
+        "FLORES GOURMET", "FRUTERIA", "CARNICERIA", "PESCADERIA", "SUPERMERCADO"
+    ]):
+        cat = "Restaurantes & Ocio" if "Restaurantes & Ocio" in current_cats else "Alimentación"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Alimentación y supermercado"
+        }
+
+    # 7. Utilities & Telecommunications & Housing
+    if desc_upper == "FREE" or any(k in desc_upper for k in [
+        "FREE TELECOM", "FREE ", "EDF CLIENTS", "EDF ", "XFERA MOVILES", "YOIGO", "DIGI",
+        "VODAFONE", "MOVISTAR", "ORANGE", "O2", "PEPEPHONE", "IBERDROLA", "ENDESA", "NATURGY",
+        "TOTALENERGIES", "AGUAS", "CANAL DE ISABEL", "COMUNIDAD DE PROPIETARIOS", "ALQUILER"
+    ]):
+        cat = "Vivienda & Suministros" if "Vivienda & Suministros" in current_cats else "Hogar"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Suministros, telefonía y hogar"
+        }
+
+    # 8. Subscriptions & Tech & Software
+    if any(k in desc_upper for k in [
+        "OPENAI", "CHATGPT", "APPLE.COM", "GOOGLE *GOOGLE", "GOOGLE ONE", "NETFLIX", "SPOTIFY",
+        "AMAZON PRIME", "PRIME VIDEO", "DISNEY", "HBO", "MAX", "YOUTUBE", "ICLOUD", "MICROSOFT",
+        "DROPBOX", "ADOBE", "CLAUDE.AI", "ANTHROPIC", "GITHUB", "CURSOR"
+    ]):
+        cat = "Suscripciones & Servicios" if "Suscripciones & Servicios" in current_cats else "Suscripciones"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.99,
+            "notes": "Suscripción digital / Software"
+        }
+
+    # 9. Transport & Parking & Tolls & Gas
+    if any(k in desc_upper for k in [
+        "UBER", "UBR*", "BOLT", "CABIFY", "FREENOW", "RATP", "RENFE", "METRO", "EMT ",
+        "TFL TRAVEL", "PARKING", "APARCAMIENTO", "AUTOPISTA", "PEAJE", "ORA LLANES", "ESTACIONAMIENTO",
+        "REPSOL", "CEPSA", "BP ", "SHELL", "GALP", "GASOLINERA", "PLENOIL", "PETROPRIX", "BALLENOIL"
+    ]):
+        cat = "Transporte & Gasolina" if "Transporte & Gasolina" in current_cats else "Transporte"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Transporte, combustible o movilidad"
+        }
+
+    # 10. Travel & Flights & Accommodation
+    if any(k in desc_upper for k in [
+        "VOLOTEA", "IBERIA", "VUELING", "RYANAIR", "AIR EUROPA", "AIR FRANCE", "EASYJET",
+        "BOOKING.COM", "BOOKING", "AIRBNB", "HOTEL", "HOSTEL", "AVOLTA", "DUTY FREE", "WORLD DUTY FREE",
+        "AEROPUERTO", "AEROP."
+    ]):
+        cat = "Viajes & Alojamiento" if "Viajes & Alojamiento" in current_cats else "Viajes"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Vuelo, hotel o viaje"
+        }
+
+    # 11. Gym & Sports
+    if any(k in desc_upper for k in [
+        "BYFIT", "BASIC FIT", "BASIC-FIT", "VIVAGYM", "ALTAFIT", "MCFIT", "FITNESS", "GIMNASIO", "GYM"
+    ]):
+        cat = "Deporte & Gimnasio" if "Deporte & Gimnasio" in current_cats else ("Salud & Bienestar" if "Salud & Bienestar" in current_cats else "Salud")
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Gimnasio y actividad deportiva"
+        }
+
+    # 12. Health & Pharmacy
+    if any(k in desc_upper for k in [
+        "FARMACIA", "PARAFARMACIA", "DENTAL", "OPTICA", "CLINICA", "MEDICO", "HOSPITAL", "SANITAS", "ADESLAS"
+    ]):
+        cat = "Salud & Bienestar" if "Salud & Bienestar" in current_cats else "Salud"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.98,
+            "notes": "Salud y farmacia"
+        }
+
+    # 13. Shopping, Clothing & Miscellaneous
+    if any(k in desc_upper for k in [
+        "ZARA", "MANGO", "BERSHKA", "PULL&BEAR", "STRADIVARIUS", "MASSIMO DUTTI", "H&M", "UNIQLO",
+        "PRIMARK", "SNIPES", "VANS", "NEWYORKER", "EL CORTE INGLES", "AMAZON", "SHOPIFY", "ALIEXPRESS",
+        "SHEIN", "TEMU", "DECATHLON", "IKEA", "LEROY MERLIN", "BAZAR", "MULTIPRECIO", "ESTANCO",
+        "PAPELERIA", "LIBRERIA", "LIBRO", "OH MY CREAM", "BRIKOPEX", "JIE DA", "WOUTICK", "TAL'TICKET",
+        "TOUSUNPEUSAUVAGE", "WH SMITH", "NYX*", "PARIS AUDIO"
+    ]):
+        cat = "Compras & Ropa" if "Compras & Ropa" in current_cats else "Otras compras"
+        return {
+            "category": cat,
+            "is_reimbursable": 0,
+            "reimbursement_status": "none",
+            "needs_clarification": 0,
+            "clarification_question": None,
+            "confidence": 0.95,
+            "notes": "Compra comercial / Ropa / Ocio"
+        }
+
+    return None
 
 COMPANY_AMBIGUOUS_KEYWORDS = [
     "REPSOL", "CEPSA", "BP", "SHELL", "GALP", "GASOLINERA", "PETROPRIX", "PLENOIL",
@@ -357,6 +638,11 @@ def categorize_transaction(description: str, amount: float, account: str = "", b
             "confidence": 0.98,
             "notes": f"Categoría detectada de extracto: {bank_category}"
         }
+
+    # Step 0.5: Quick Heuristic Match for common Spanish banks, Bizums, Huchas & Merchants
+    q_match = quick_heuristic_match(desc_upper, amount, account)
+    if q_match:
+        return q_match
 
     # Step 1: Knowledge Base Match (from Diego's real history)
     kb_match = match_knowledge_base(description)

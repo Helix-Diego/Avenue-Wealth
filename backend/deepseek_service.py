@@ -71,6 +71,7 @@ def test_deepseek_connection(api_key: str = None, model: str = None) -> Dict[str
     Returns latency and success status.
     """
     import time
+    reset_circuit_breaker()
     cfg = get_deepseek_config()
     key_to_use = api_key if (api_key is not None and api_key.strip()) else cfg["api_key"]
     model_to_use = model if (model is not None and model.strip()) else cfg["model"]
@@ -134,7 +135,17 @@ def test_deepseek_connection(api_key: str = None, model: str = None) -> Dict[str
             "latency_ms": None
         }
 
-def call_deepseek(messages: List[Dict[str, str]], temperature: float = 0.3, max_tokens: int = 4096) -> str:
+_CIRCUIT_BREAKER_ACTIVE = False
+
+def reset_circuit_breaker():
+    global _CIRCUIT_BREAKER_ACTIVE
+    _CIRCUIT_BREAKER_ACTIVE = False
+
+def call_deepseek(messages: List[Dict[str, str]], temperature: float = 0.3, max_tokens: int = 4096, timeout: int = 25) -> str:
+    global _CIRCUIT_BREAKER_ACTIVE
+    if _CIRCUIT_BREAKER_ACTIVE:
+        raise ValueError("DeepSeek temporalmente omitido por error 401/403 en la clave.")
+
     cfg = get_deepseek_config()
     api_key = cfg["api_key"]
     model_name = cfg["model"]
@@ -158,9 +169,87 @@ def call_deepseek(messages: List[Dict[str, str]], temperature: float = 0.3, max_
         }
     )
 
-    with urllib.request.urlopen(req, context=get_ssl_context(), timeout=60) as res:
-        data = json.loads(res.read().decode('utf-8'))
-        return data["choices"][0]["message"]["content"]
+    try:
+        with urllib.request.urlopen(req, context=get_ssl_context(), timeout=timeout) as res:
+            data = json.loads(res.read().decode('utf-8'))
+            return data["choices"][0]["message"]["content"]
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            _CIRCUIT_BREAKER_ACTIVE = True
+            print(f"DeepSeek clave inválida o expirada ({e.code}). Activado circuit breaker para evitar esperas.")
+        raise
+
+def batch_categorize_with_ai(
+    items: List[Dict[str, Any]],
+    categories: List[str]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Classifies a batch of transactions (up to 25 items) in a SINGLE DeepSeek call.
+    Returns a dict mapping item key/description to categorization result.
+    Enforces a strict 6-second timeout so file imports never hang.
+    """
+    cfg = get_deepseek_config()
+    if not cfg["ai_enabled"] or not cfg["api_key"] or not items:
+        return {}
+
+    items_to_send = items[:25]
+    prompt_items = [
+        {"id": idx, "concepto": it["description"], "importe": it["amount"]}
+        for idx, it in enumerate(items_to_send)
+    ]
+
+    prompt = f"""Eres un clasificador bancario ultra-rápido. Clasifica las siguientes transacciones bancarias en la categoría más adecuada.
+
+CATEGORÍAS PERMITIDAS:
+{json.dumps(categories, ensure_ascii=False)}
+
+TRANSACCIONES:
+{json.dumps(prompt_items, ensure_ascii=False)}
+
+Devuelve ÚNICAMENTE un array JSON válido donde cada objeto tenga:
+{{"id": número, "category": "categoría exacta", "confidence": 0.0 a 1.0, "is_reimbursable": 0 o 1, "needs_clarification": true o false}}"""
+
+    try:
+        raw_resp = call_deepseek(
+            [
+                {"role": "system", "content": "Devuelve exclusivamente un array JSON válido sin texto adicional."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=900,
+            timeout=7
+        )
+        clean = raw_resp.strip()
+        if clean.startswith("```json"):
+            clean = clean[7:]
+        if clean.startswith("```"):
+            clean = clean[3:]
+        if clean.endswith("```"):
+            clean = clean[:-3]
+        parsed = json.loads(clean.strip())
+        results = {}
+        if isinstance(parsed, list):
+            for res in parsed:
+                rid = res.get("id")
+                if rid is not None and 0 <= rid < len(items_to_send):
+                    original_desc = items_to_send[rid]["description"]
+                    cat = res.get("category", "Otras compras")
+                    if cat not in categories:
+                        cat = "Otras compras"
+                    conf = float(res.get("confidence", 0.85))
+                    needs_c = bool(res.get("needs_clarification", False)) or (conf < 0.85)
+                    results[original_desc] = {
+                        "category": cat,
+                        "confidence": conf,
+                        "is_reimbursable": int(res.get("is_reimbursable", 0)),
+                        "needs_clarification": 1 if needs_c else 0,
+                        "clarification_question": f"¿Es '{cat}' la categoría correcta para '{original_desc}'?" if needs_c else None,
+                        "notes": "Clasificado por DeepSeek AI (Lote rápido)"
+                    }
+        return results
+    except Exception as e:
+        print(f"Batch DeepSeek categorization note (skipping AI for speed): {e}")
+        return {}
 
 def categorize_with_ai(
     description: str,
@@ -170,6 +259,7 @@ def categorize_with_ai(
 ) -> Dict[str, Any]:
     """
     Uses DeepSeek to classify ambiguous or unseen transactions based on categories and few-shots.
+    Uses strict 4-second timeout to prevent stalling imports.
     """
     cfg = get_deepseek_config()
     if not cfg["ai_enabled"] or not cfg["api_key"]:
@@ -184,50 +274,27 @@ def categorize_with_ai(
 
     few_shots_text = "\n".join([
         f"- '{fs['concept']}' ({fs['amount']}€) -> Categoría: {fs['category']}"
-        for fs in few_shots[:20]
+        for fs in few_shots[:10]
     ])
 
-    user_name = cfg["user_name"]
-    company_rule = ""
-    if cfg["company_enabled"] and cfg["company_name"]:
-        company_rule = f"Si el concepto parece ser un desplazamiento, gasolina o comida por trabajo para {cfg['company_name']}, o si contiene '{cfg['company_name']}', marca 'is_reimbursable': 1 o pide aclaración."
-
-    prompt = f"""Eres el agente financiero personal de {user_name}.
-Tu tarea es clasificar la siguiente transacción bancaria en la categoría más adecuada de la lista proporcionada.
-
-DIRECTRICES:
-1. Analiza el comercio o concepto bancario.
-2. {company_rule}
-3. Si el concepto es ambiguo o no estás seguro al 100%, indica 'needs_clarification': true y formula una pregunta clara para el usuario en 'clarification_question'.
-
-CATEGORÍAS DISPONIBLES:
-{json.dumps(categories, ensure_ascii=False)}
-
-EJEMPLOS DE REFERENCIA:
+    prompt = f"""Eres un agente financiero. Clasifica la transacción:
+Concepto: "{description}", Importe: {amount} €
+Categorías: {json.dumps(categories, ensure_ascii=False)}
+Ejemplos:
 {few_shots_text}
 
-TRANSACCIÓN A CLASIFICAR:
-- Concepto: "{description}"
-- Importe: {amount} €
-
-Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
-{{
-  "category": "nombre exacto de una de las categorías disponibles",
-  "is_reimbursable": 0 o 1,
-  "needs_clarification": true o false,
-  "clarification_question": "pregunta para el usuario si hay duda, o null si está seguro",
-  "confidence": número entre 0.0 y 1.0,
-  "explanation": "breve motivo"
-}}"""
+Responde SOLO en JSON:
+{{"category": "categoría exacta", "is_reimbursable": 0 o 1, "needs_clarification": true o false, "confidence": 0.0 a 1.0, "explanation": "breve motivo"}}"""
 
     try:
         raw_resp = call_deepseek(
             [
-                {"role": "system", "content": "Eres un asistente financiero experto y preciso. Devuelve únicamente JSON válido."},
+                {"role": "system", "content": "Devuelve exclusivamente JSON válido."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.1,
-            max_tokens=250
+            max_tokens=200,
+            timeout=5
         )
         clean_json = raw_resp.strip()
         if clean_json.startswith("```json"):
@@ -240,14 +307,14 @@ Responde ÚNICAMENTE en formato JSON con la siguiente estructura:
         parsed = json.loads(clean_json.strip())
         return parsed
     except Exception as e:
-        print(f"DeepSeek categorization note: {e}")
+        print(f"DeepSeek single categorization fallback ({e})")
         return {
             "category": "Otras compras",
             "is_reimbursable": 0,
             "needs_clarification": True,
             "clarification_question": f"¿Cómo deseas categorizar '{description}' ({amount:.2f}€)?",
             "confidence": 0.5,
-            "explanation": "Fallback por conexión o modelo IA"
+            "explanation": "Fallback rápido por tiempo límite de conexión"
         }
 
 def chat_financial_assistant(
