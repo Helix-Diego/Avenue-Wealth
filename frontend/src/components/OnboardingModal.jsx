@@ -153,6 +153,13 @@ export default function OnboardingModal({
     setAuthError('');
     setAuthSuccess('');
 
+    const ALLOWED_BETA_EMAILS = ['diegotcach@gmail.com', 'carla.garcia.faya@gmail.com'];
+    const cleanEmail = email.toLowerCase().trim();
+    if (!ALLOWED_BETA_EMAILS.includes(cleanEmail) && !cleanEmail.endsWith('@avenue.wealth')) {
+      setAuthError(`Acceso restringido: Avenue Wealth está en fase beta privada. El correo '${cleanEmail}' no tiene acceso autorizado.`);
+      return;
+    }
+
     if (isSignUp) {
       if (!firstName.trim()) {
         setAuthError('Por favor introduce tu nombre.');
@@ -358,9 +365,8 @@ export default function OnboardingModal({
             {/* Top Bar with Stepper */}
             <div className="px-8 py-4 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between select-none">
               <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 rounded-xl bg-neutral-900 dark:bg-white flex items-center justify-center p-1.5 shadow-md">
-                  <img src="/logo-icon-white.png" alt="Avenue Wealth" className="h-5 w-auto block dark:hidden object-contain" />
-                  <img src="/logo-icon-black.png" alt="Avenue Wealth" className="h-5 w-auto hidden dark:block object-contain" />
+                <div className="w-8 h-8 rounded-xl overflow-hidden flex items-center justify-center shadow-md">
+                  <img src="/logo.jpg" alt="Avenue Wealth" className="h-full w-full object-cover" />
                 </div>
                 <div>
                   <h1 className="text-sm font-semibold text-neutral-900 dark:text-white">Avenue Wealth</h1>
@@ -400,14 +406,9 @@ export default function OnboardingModal({
                   <div className="text-center space-y-2">
                     <div className="flex justify-center pb-1">
                       <img
-                        src="/logo-black.png"
+                        src="/logo.jpg"
                         alt="Avenue Wealth"
-                        className="h-16 w-auto block dark:hidden object-contain"
-                      />
-                      <img
-                        src="/logo-white.png"
-                        alt="Avenue Wealth"
-                        className="h-16 w-auto hidden dark:block object-contain"
+                        className="h-16 w-16 rounded-2xl shadow-sm object-cover"
                       />
                     </div>
                     <h2 className="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">
@@ -676,20 +677,6 @@ export default function OnboardingModal({
                           </button>
                         </div>
                       )}
-
-                      {/* Guest / Local Option */}
-                      <div className="pt-2 text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAuthMode('guest');
-                            setStep(2);
-                          }}
-                          className="text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200 underline cursor-pointer"
-                        >
-                          Continuar como invitado (Modo Local Offline)
-                        </button>
-                      </div>
                     </div>
                   )}
                 </div>

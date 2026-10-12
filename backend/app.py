@@ -973,7 +973,7 @@ def batch_undo_action(req: BatchUndoRequest, current_user: User = Depends(get_cu
             restored_count += 1
 
     conn.commit()
-    sync_realtime_account_balances(conn)
+    sync_realtime_account_balances(conn, user_id=current_user.id)
     conn.close()
 
     return {"status": "ok", "restored_count": restored_count}
@@ -981,20 +981,20 @@ def batch_undo_action(req: BatchUndoRequest, current_user: User = Depends(get_cu
 # --- Transfer Pairing & Split Endpoints ---
 
 @app.post("/api/transactions/find-transfer-pair")
-def api_find_transfer_pair(req: FindTransferPairRequest):
-    res = find_transfer_counterpart(req.transaction_id)
+def api_find_transfer_pair(req: FindTransferPairRequest, current_user: User = Depends(get_current_user)):
+    res = find_transfer_counterpart(req.transaction_id, user_id=current_user.id)
     if not res:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     return res
 
 @app.post("/api/transactions/pair-transfers")
-def api_pair_transfers(req: PairTransfersRequest):
-    res = pair_transfers(req.tx_id_1, req.tx_id_2)
+def api_pair_transfers(req: PairTransfersRequest, current_user: User = Depends(get_current_user)):
+    res = pair_transfers(req.tx_id_1, req.tx_id_2, user_id=current_user.id)
     return res
 
 @app.post("/api/transactions/unpair-transfer")
-def api_unpair_transfer(req: UnpairTransferRequest):
-    res = unpair_transfer(req.transaction_id)
+def api_unpair_transfer(req: UnpairTransferRequest, current_user: User = Depends(get_current_user)):
+    res = unpair_transfer(req.transaction_id, user_id=current_user.id)
     return res
 
 @app.get("/api/transactions/{tx_id}/linked-pair")
@@ -1321,8 +1321,8 @@ def link_reimbursement(req: LinkReimbursementRequest, current_user: User = Depen
 # --- Portfolio & Capital Global ---
 
 @app.get("/api/portfolio")
-def get_portfolio():
-    return get_portfolio_summary()
+def get_portfolio(current_user: User = Depends(get_current_user)):
+    return get_portfolio_summary(user_id=current_user.id)
 
 # --- Stocks (Finnhub Live Search, Quotes & Positions) ---
 
@@ -1335,36 +1335,37 @@ def get_stock_quote_endpoint(symbol: str):
     return fetch_live_stock_quote(symbol)
 
 @app.post("/api/stocks")
-def add_or_update_stock_endpoint(req: StockHoldingRequest):
+def add_or_update_stock_endpoint(req: StockHoldingRequest, current_user: User = Depends(get_current_user)):
     try:
         return add_or_update_stock_holding(
             symbol=req.symbol,
             name=req.name or "",
             shares=req.shares,
             avg_price=req.avg_price,
-            currency=req.currency or "USD"
+            currency=req.currency or "USD",
+            user_id=current_user.id
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/stocks/{symbol}")
-def delete_stock_endpoint(symbol: str):
+def delete_stock_endpoint(symbol: str, current_user: User = Depends(get_current_user)):
     try:
-        return delete_stock_holding(symbol)
+        return delete_stock_holding(symbol, user_id=current_user.id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/stocks/refresh")
-def refresh_stocks_endpoint():
-    updated = refresh_all_stock_quotes()
-    summary = get_portfolio_summary()
+def refresh_stocks_endpoint(current_user: User = Depends(get_current_user)):
+    updated = refresh_all_stock_quotes(user_id=current_user.id)
+    summary = get_portfolio_summary(user_id=current_user.id)
     return {"updated": updated, "summary": summary}
 
 # --- Generic Mutual Funds (Fondos de Inversión) ---
 
 @app.get("/api/portfolio/funds")
-def list_funds_endpoint():
-    summary = get_portfolio_summary()
+def list_funds_endpoint(current_user: User = Depends(get_current_user)):
+    summary = get_portfolio_summary(user_id=current_user.id)
     return {"funds": summary.get("funds", []), "summary": summary.get("funds_summary", {})}
 
 @app.get("/api/portfolio/funds/lookup")
@@ -1391,7 +1392,7 @@ def delete_fund_endpoint(isin: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/portfolio/funds/{isin}/contribution")
-def add_fund_contribution_endpoint(isin: str, req: FundContributionRequest):
+def add_fund_contribution_endpoint(isin: str, req: FundContributionRequest, current_user: User = Depends(get_current_user)):
     try:
         return record_fund_contribution(
             isin=isin,
@@ -1400,26 +1401,27 @@ def add_fund_contribution_endpoint(isin: str, req: FundContributionRequest):
             nav_price=req.nav_price,
             shares=req.shares,
             notes=req.notes or "",
-            funding_account=req.funding_account or "Santander"
+            funding_account=req.funding_account or "Santander",
+            user_id=current_user.id
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/portfolio/funds/contributions/{contrib_id}")
-def delete_fund_contribution_endpoint(contrib_id: int):
+def delete_fund_contribution_endpoint(contrib_id: int, current_user: User = Depends(get_current_user)):
     try:
-        return delete_fund_contribution(contrib_id)
+        return delete_fund_contribution(contrib_id, user_id=current_user.id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/portfolio/funds/refresh-all")
-def refresh_funds_endpoint():
+def refresh_funds_endpoint(current_user: User = Depends(get_current_user)):
     updated = refresh_all_funds_nav()
-    summary = get_portfolio_summary()
+    summary = get_portfolio_summary(user_id=current_user.id)
     return {"updated": updated, "summary": summary}
 
 @app.post("/api/portfolio/msci-contribution")
-def add_msci_contribution_legacy(req: MSCIContributionRequest):
+def add_msci_contribution_legacy(req: MSCIContributionRequest, current_user: User = Depends(get_current_user)):
     return record_fund_contribution(
         isin="IE00BYX5P602",
         date_str=req.date,
@@ -1427,7 +1429,8 @@ def add_msci_contribution_legacy(req: MSCIContributionRequest):
         nav_price=req.nav_price,
         shares=req.shares,
         notes=req.notes or "Aportación Fidelity MSCI World",
-        funding_account="Santander"
+        funding_account="Santander",
+        user_id=current_user.id
     )
 
 @app.get("/api/accounts")
@@ -1536,12 +1539,12 @@ class LoanCreateRequest(BaseModel):
     notes: Optional[str] = None
 
 @app.get("/api/loans")
-def get_loans():
+def get_loans(current_user: User = Depends(get_current_user)):
     from backend.loans import get_loans_summary
-    return get_loans_summary()
+    return get_loans_summary(user_id=current_user.id)
 
 @app.post("/api/loans")
-def create_loan(req: LoanCreateRequest):
+def create_loan(req: LoanCreateRequest, current_user: User = Depends(get_current_user)):
     from backend.loans import compute_monthly_installment, get_loans_summary
     installment = req.monthly_installment
     if (req.interest_rate_pct and req.interest_rate_pct > 0) or (installment is None or installment <= 0):
@@ -1553,9 +1556,10 @@ def create_loan(req: LoanCreateRequest):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO loans (name, entity, contract_number, loan_type, financed_item, initial_principal, interest_rate_pct, monthly_installment, term_months, start_date, match_pattern, account_name, disbursement_tx_id, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO loans (user_id, name, entity, contract_number, loan_type, financed_item, initial_principal, interest_rate_pct, monthly_installment, term_months, start_date, match_pattern, account_name, disbursement_tx_id, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
+        current_user.id,
         req.name,
         req.entity,
         req.contract_number or "",
@@ -1573,24 +1577,27 @@ def create_loan(req: LoanCreateRequest):
     ))
     conn.commit()
     conn.close()
-    return get_loans_summary()
+    return get_loans_summary(user_id=current_user.id)
 
 @app.put("/api/loans/{loan_id}")
-def update_loan(loan_id: int, req: LoanUpdateRequest):
+def update_loan(loan_id: int, req: LoanUpdateRequest, current_user: User = Depends(get_current_user)):
     from backend.loans import compute_monthly_installment, get_loans_summary
     conn = get_connection()
     cursor = conn.cursor()
 
     update_data = req.dict(exclude_unset=True)
     # If principal, rate or term was changed or rate > 0, ensure monthly_installment matches TIN formula
-    cursor.execute("SELECT initial_principal, interest_rate_pct, term_months FROM loans WHERE id = ?", (loan_id,))
+    cursor.execute("SELECT initial_principal, interest_rate_pct, term_months FROM loans WHERE id = ? AND user_id = ?", (loan_id, current_user.id))
     cur = cursor.fetchone()
-    if cur:
-        p = update_data.get("initial_principal", cur["initial_principal"])
-        r = update_data.get("interest_rate_pct", cur["interest_rate_pct"])
-        t = update_data.get("term_months", cur["term_months"])
-        if (r and r > 0) or ("monthly_installment" in update_data and (update_data["monthly_installment"] is None or update_data["monthly_installment"] <= 0)):
-            update_data["monthly_installment"] = compute_monthly_installment(p, r, t)
+    if not cur:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Préstamo o crédito no encontrado")
+
+    p = update_data.get("initial_principal", cur["initial_principal"])
+    r = update_data.get("interest_rate_pct", cur["interest_rate_pct"])
+    t = update_data.get("term_months", cur["term_months"])
+    if (r and r > 0) or ("monthly_installment" in update_data and (update_data["monthly_installment"] is None or update_data["monthly_installment"] <= 0)):
+        update_data["monthly_installment"] = compute_monthly_installment(p, r, t)
 
     fields = []
     values = []
@@ -1599,29 +1606,29 @@ def update_loan(loan_id: int, req: LoanUpdateRequest):
             fields.append(f"{k} = ?")
             values.append(v)
     if fields:
-        values.append(loan_id)
-        cursor.execute(f"UPDATE loans SET {', '.join(fields)} WHERE id = ?", tuple(values))
+        values.extend([loan_id, current_user.id])
+        cursor.execute(f"UPDATE loans SET {', '.join(fields)} WHERE id = ? AND user_id = ?", tuple(values))
         conn.commit()
     conn.close()
-    return get_loans_summary()
+    return get_loans_summary(user_id=current_user.id)
 
 @app.delete("/api/loans/{loan_id}")
-def delete_loan(loan_id: int):
+def delete_loan(loan_id: int, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     # Unlink any transactions assigned to this loan before deletion
-    cursor.execute("UPDATE transactions SET loan_id = NULL WHERE loan_id = ?", (loan_id,))
-    cursor.execute("DELETE FROM loans WHERE id = ?", (loan_id,))
+    cursor.execute("UPDATE transactions SET loan_id = NULL WHERE loan_id = ? AND user_id = ?", (loan_id, current_user.id))
+    cursor.execute("DELETE FROM loans WHERE id = ? AND user_id = ?", (loan_id, current_user.id))
     conn.commit()
     conn.close()
     from backend.loans import get_loans_summary
-    return get_loans_summary()
+    return get_loans_summary(user_id=current_user.id)
 
 @app.post("/api/loans/{loan_id}/link")
-def link_transactions_to_loan(loan_id: int, req: LinkLoanTransactionsRequest):
+def link_transactions_to_loan(loan_id: int, req: LinkLoanTransactionsRequest, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM loans WHERE id = ?", (loan_id,))
+    cursor.execute("SELECT id, name FROM loans WHERE id = ? AND user_id = ?", (loan_id, current_user.id))
     loan = cursor.fetchone()
     if not loan:
         conn.close()
@@ -1632,15 +1639,15 @@ def link_transactions_to_loan(loan_id: int, req: LinkLoanTransactionsRequest):
         cursor.execute(f"""
             UPDATE transactions 
             SET loan_id = ?, category = 'Deudas y créditos'
-            WHERE id IN ({placeholders})
-        """, (loan_id, *req.transaction_ids))
+            WHERE id IN ({placeholders}) AND user_id = ?
+        """, (loan_id, *req.transaction_ids, current_user.id))
         conn.commit()
     conn.close()
     from backend.loans import get_loans_summary
-    return get_loans_summary()
+    return get_loans_summary(user_id=current_user.id)
 
 @app.post("/api/loans/{loan_id}/unlink")
-def unlink_transactions_from_loan(loan_id: int, req: LinkLoanTransactionsRequest):
+def unlink_transactions_from_loan(loan_id: int, req: LinkLoanTransactionsRequest, current_user: User = Depends(get_current_user)):
     conn = get_connection()
     cursor = conn.cursor()
     if req.transaction_ids:
@@ -1649,12 +1656,12 @@ def unlink_transactions_from_loan(loan_id: int, req: LinkLoanTransactionsRequest
         cursor.execute(f"""
             UPDATE transactions 
             SET loan_id = 0
-            WHERE id IN ({placeholders})
-        """, tuple(req.transaction_ids))
+            WHERE id IN ({placeholders}) AND user_id = ?
+        """, (*req.transaction_ids, current_user.id))
         conn.commit()
     conn.close()
     from backend.loans import get_loans_summary
-    return get_loans_summary()
+    return get_loans_summary(user_id=current_user.id)
 
 @app.get("/api/loans/search-candidates")
 def search_loan_candidates(q: str = "", limit: int = 60, current_user: User = Depends(get_current_user)):
@@ -1812,7 +1819,7 @@ async def upload_statement(
         desc_up = (tx["description"] or "").upper()
         if any(kw in desc_up for kw in ["FIDELITY", "MSCI WORLD", "INDEX P AC"]):
             try:
-                res_fund = record_fund_subscription_from_statement(conn, tx["date"], abs(tx["amount"]), tx["description"])
+                res_fund = record_fund_subscription_from_statement(conn, tx["date"], abs(tx["amount"]), tx["description"], user_id=current_user.id)
                 if res_fund:
                     fund_subs_updated += 1
             except Exception as e:
@@ -1904,7 +1911,7 @@ async def upload_statement(
     conn.close()
 
     # Auto-pair transfers across newly imported transactions and existing accounts
-    paired_transfers, transfer_doubts = auto_pair_internal_transfers(imported_ids if imported_ids else None)
+    paired_transfers, transfer_doubts = auto_pair_internal_transfers(imported_ids if imported_ids else None, user_id=current_user.id)
 
     # Trigger automatic rolling snapshot
     try:
@@ -1923,7 +1930,7 @@ async def upload_statement(
     if paired_transfers > 0:
         msg += f" {paired_transfers} traspasos entre cuentas emparejados automáticamente."
     if fund_subs_updated > 0:
-        msg += f" {fund_subs_updated} aportaciones sincronizadas con el fondo MSCI World."
+        msg += f" {fund_subs_updated} aportaciones a fondos de inversión o acciones sincronizadas."
     if (flagged_doubts + transfer_doubts) > 0:
         msg += f" {flagged_doubts + transfer_doubts} requieren confirmación."
 
@@ -1950,47 +1957,47 @@ async def upload_statement(
 # --- DeepSeek Integrated Financial Chat Assistant & Analytics Engine ---
 
 @app.get("/api/analytics/profile")
-def get_analytics_profile():
+def get_analytics_profile(current_user: User = Depends(get_current_user)):
     """
     Returns precomputed multi-month financial analytics: trends, category matrix,
     recurring subscriptions, top merchants, reimbursement audit, and health.
     """
     try:
-        return get_comprehensive_financial_profile()
+        return get_comprehensive_financial_profile(user_id=current_user.id)
     except Exception as e:
         print("Analytics profile error:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/analytics/balance-matrix")
-def get_analytics_balance_matrix():
+def get_analytics_balance_matrix(current_user: User = Depends(get_current_user)):
     """
     Returns complete Excel / Notion spreadsheet balance matrix with months,
     categories, card settlements deduplicated, work expenses, and wealth evolution.
     """
     try:
-        return get_monthly_balance_matrix()
+        return get_monthly_balance_matrix(user_id=current_user.id)
     except Exception as e:
         print("Balance matrix error:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/analytics/advanced")
-def get_analytics_advanced(month: Optional[str] = None):
+def get_analytics_advanced(month: Optional[str] = None, current_user: User = Depends(get_current_user)):
     """
     Returns advanced dashboard analytics for the specified month or global:
     Day of week spending habits, 50/30/20 budget rule distribution,
     spending anomalies / money leaks, and top merchants.
     """
     try:
-        return get_advanced_analytics(month)
+        return get_advanced_analytics(month, user_id=current_user.id)
     except Exception as e:
         print("Advanced analytics error:", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat")
-async def chat_with_agent_endpoint(req: ChatRequest):
+async def chat_with_agent_endpoint(req: ChatRequest, current_user: User = Depends(get_current_user)):
     try:
         latest_user_query = req.messages[-1].content if req.messages else None
-        context_text = build_llm_financial_context(user_query=latest_user_query)
+        context_text = build_llm_financial_context(user_query=latest_user_query, user_id=current_user.id)
 
         messages_dicts = [{"role": msg.role, "content": msg.content} for msg in req.messages]
         reply = chat_financial_assistant(

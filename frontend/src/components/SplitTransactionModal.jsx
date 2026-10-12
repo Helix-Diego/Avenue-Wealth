@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   X, 
   Scissors, 
@@ -104,7 +105,7 @@ export default function SplitTransactionModal({
         notes: s.notes
       }));
 
-      const res = await fetch('/api/transactions/split', {
+      const res = await authFetch('/api/transactions/split', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

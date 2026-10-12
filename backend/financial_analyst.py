@@ -19,7 +19,7 @@ def strip_accents(text: str) -> str:
     nfkd = unicodedata.normalize('NFKD', text)
     return "".join([c for c in nfkd if not unicodedata.combining(c)]).upper()
 
-def get_multi_month_trends() -> List[Dict[str, Any]]:
+def get_multi_month_trends(user_id: str = "00000000-0000-0000-0000-000000000000") -> List[Dict[str, Any]]:
     """
     Computes a 6-month historical overview of income, personal expenses,
     reimbursable company outlays, and net savings rate.
@@ -40,9 +40,10 @@ def get_multi_month_trends() -> List[Dict[str, Any]]:
         SUM(CASE WHEN category = 'Traspaso entre cuentas' AND amount < 0 THEN ABS(amount) ELSE 0 END) as internal_transfers,
         COUNT(*) as total_txs
     FROM transactions
+    WHERE user_id = ?
     GROUP BY month
     ORDER BY month ASC
-    """)
+    """, (user_id,))
     rows = cursor.fetchall()
     conn.close()
 
@@ -82,7 +83,7 @@ def get_multi_month_trends() -> List[Dict[str, Any]]:
 
     return trends
 
-def get_category_matrix() -> Dict[str, Any]:
+def get_category_matrix(user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     """
     Computes a month-over-month category breakdown matrix.
     """
@@ -96,11 +97,11 @@ def get_category_matrix() -> Dict[str, Any]:
         SUM(CASE WHEN amount < 0 THEN ABS(amount) ELSE -amount END) as total_spent,
         COUNT(*) as count
     FROM transactions
-    WHERE is_reimbursable = 0 
+    WHERE is_reimbursable = 0 AND user_id = ?
       AND category NOT IN ('Deudas y créditos', 'Prestamos familiares', 'Inversiones y ahorros', 'Liquidación Tarjetas', 'Traspaso entre cuentas', 'Sueldo', 'Ingresos / Nómina', 'Otros ingresos', 'Gastos de Empresa')
     GROUP BY category, month
     ORDER BY category, month
-    """)
+    """, (user_id,))
     rows = cursor.fetchall()
     conn.close()
 
@@ -126,7 +127,7 @@ def get_category_matrix() -> Dict[str, Any]:
 
     return {"months": months, "categories": result}
 
-def get_monthly_balance_matrix() -> Dict[str, Any]:
+def get_monthly_balance_matrix(user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     """
     Computes a complete spreadsheet-style (Excel / Notion) financial balance matrix.
     Includes:
@@ -139,7 +140,7 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT DISTINCT substr(date, 1, 7) as m FROM transactions ORDER BY m ASC")
+    cursor.execute("SELECT DISTINCT substr(date, 1, 7) as m FROM transactions WHERE user_id = ? ORDER BY m ASC", (user_id,))
     months = [r[0] for r in cursor.fetchall() if r[0]]
     if not months:
         conn.close()
@@ -188,8 +189,9 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
     WHERE amount > 0 
       AND category IN ('Sueldo', 'Ingresos / Nómina', 'Otros ingresos', 'Impuestos y tasas')
       AND is_reimbursable = 0
+      AND user_id = ?
     GROUP BY inc_type, m
-    """)
+    """, (user_id,))
     inc_rows = cursor.fetchall()
 
     income_by_type = defaultdict(lambda: {m: 0.0 for m in months})
@@ -230,8 +232,9 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
     FROM transactions
     WHERE is_reimbursable = 0 
       AND category NOT IN ('Liquidación Tarjetas', 'Inversiones y ahorros', 'Deudas y créditos', 'Prestamos familiares', 'Traspaso entre cuentas', 'Sueldo', 'Ingresos / Nómina', 'Otros ingresos', 'Gastos de Empresa')
+      AND user_id = ?
     GROUP BY category, m
-    """)
+    """, (user_id,))
     exp_rows = cursor.fetchall()
 
     exp_by_cat = defaultdict(lambda: {m: 0.0 for m in months})
@@ -275,9 +278,9 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
         substr(date, 1, 7) as m,
         SUM(ABS(amount))
     FROM transactions
-    WHERE category = 'Liquidación Tarjetas' AND amount < 0
+    WHERE category = 'Liquidación Tarjetas' AND amount < 0 AND user_id = ?
     GROUP BY card_provider, m
-    """)
+    """, (user_id,))
     card_rows = cursor.fetchall()
 
     card_by_prov = defaultdict(lambda: {m: 0.0 for m in months})
@@ -319,9 +322,9 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
         substr(date, 1, 7) as m,
         SUM(ABS(amount))
     FROM transactions
-    WHERE category = 'Traspaso entre cuentas' AND amount < 0
+    WHERE category = 'Traspaso entre cuentas' AND amount < 0 AND user_id = ?
     GROUP BY tr_type, m
-    """)
+    """, (user_id,))
     tr_rows = cursor.fetchall()
     tr_by_type = defaultdict(lambda: {m: 0.0 for m in months})
     for trt, m, val in tr_rows:
@@ -357,8 +360,9 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
         SUM(CASE WHEN is_reimbursable = 1 AND amount < 0 THEN ABS(amount) ELSE 0 END) as outlays,
         SUM(CASE WHEN amount > 0 AND (category = 'Gastos de Empresa' OR description LIKE '%reembolso%') THEN amount ELSE 0 END) as received
     FROM transactions
+    WHERE user_id = ?
     GROUP BY m
-    """)
+    """, (user_id,))
     reimb_m_rows = cursor.fetchall()
     reimb_outlays_by_m = {m: 0.0 for m in months}
     reimb_rcvd_by_m = {m: 0.0 for m in months}
@@ -380,9 +384,9 @@ def get_monthly_balance_matrix() -> Dict[str, Any]:
     cursor.execute("""
     SELECT substr(date, 1, 7) as m, SUM(ABS(amount))
     FROM transactions
-    WHERE category = 'Inversiones y ahorros' AND amount < 0
+    WHERE category = 'Inversiones y ahorros' AND amount < 0 AND user_id = ?
     GROUP BY m
-    """)
+    """, (user_id,))
     inv_by_m = {m: 0.0 for m in months}
     for m, val in cursor.fetchall():
         if m in inv_by_m:
@@ -540,7 +544,7 @@ def canonical_merchant(desc: str) -> Tuple[str, str]:
     clean = clean.split(',')[0].split(' CONCEPTO')[0].strip()
     return clean[:30].title(), "Otros"
 
-def detect_recurring_subscriptions() -> List[Dict[str, Any]]:
+def detect_recurring_subscriptions(user_id: str = "00000000-0000-0000-0000-000000000000") -> List[Dict[str, Any]]:
     """
     Detects recurring fixed expenses and subscriptions based on cadence,
     frequency across multiple months, and typical merchant names.
@@ -552,8 +556,9 @@ def detect_recurring_subscriptions() -> List[Dict[str, Any]]:
     SELECT date, description, raw_description, amount, category 
     FROM transactions 
     WHERE amount < 0 AND category NOT IN ('Deudas y créditos', 'Liquidación Tarjetas', 'Traspaso entre cuentas')
+      AND user_id = ?
     ORDER BY date ASC
-    """)
+    """, (user_id,))
     rows = cursor.fetchall()
     conn.close()
 
@@ -586,7 +591,7 @@ def detect_recurring_subscriptions() -> List[Dict[str, Any]]:
     subscriptions.sort(key=lambda x: x["total_amount"], reverse=True)
     return subscriptions
 
-def get_top_merchants(limit: int = 15) -> List[Dict[str, Any]]:
+def get_top_merchants(user_id: str = "00000000-0000-0000-0000-000000000000", limit: int = 15) -> List[Dict[str, Any]]:
     """
     Ranks top payees and merchants by total spend across personal categories.
     """
@@ -597,7 +602,8 @@ def get_top_merchants(limit: int = 15) -> List[Dict[str, Any]]:
     SELECT description, amount, category, date
     FROM transactions
     WHERE amount < 0 AND is_reimbursable = 0 AND category NOT IN ('Deudas y créditos', 'Inversiones y ahorros', 'Liquidación Tarjetas', 'Traspaso entre cuentas')
-    """)
+      AND user_id = ?
+    """, (user_id,))
     rows = cursor.fetchall()
     conn.close()
 
@@ -625,9 +631,9 @@ def get_top_merchants(limit: int = 15) -> List[Dict[str, Any]]:
 
     return result
 
-def get_reimbursement_audit() -> Dict[str, Any]:
+def get_reimbursement_audit(user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     """
-    Audits reimbursable work expenses (BMC Software): pending items, amounts recovered,
+    Audits reimbursable work expenses: pending items, amounts recovered,
     and net balance awaiting reimbursement.
     """
     conn = get_connection()
@@ -637,25 +643,25 @@ def get_reimbursement_audit() -> Dict[str, Any]:
     cursor.execute("""
     SELECT id, date, account, description, amount, notes
     FROM transactions
-    WHERE is_reimbursable = 1 AND reimbursement_status = 'pending'
+    WHERE is_reimbursable = 1 AND reimbursement_status = 'pending' AND user_id = ?
     ORDER BY date DESC
-    """)
+    """, (user_id,))
     pending_rows = cursor.fetchall()
 
     # Reimbursed or resolved outlays
     cursor.execute("""
     SELECT SUM(ABS(amount))
     FROM transactions
-    WHERE is_reimbursable = 1 AND reimbursement_status = 'reimbursed'
-    """)
+    WHERE is_reimbursable = 1 AND reimbursement_status = 'reimbursed' AND user_id = ?
+    """, (user_id,))
     reimbursed_total = cursor.fetchone()[0] or 0.0
 
     # Inflows marked as work reimbursement
     cursor.execute("""
     SELECT SUM(amount)
     FROM transactions
-    WHERE amount > 0 AND (category = 'Gastos de Empresa' OR description LIKE '%reembolso%')
-    """)
+    WHERE amount > 0 AND (category = 'Gastos de Empresa' OR description LIKE '%reembolso%') AND user_id = ?
+    """, (user_id,))
     received_total = cursor.fetchone()[0] or 0.0
 
     conn.close()
@@ -683,15 +689,15 @@ def get_reimbursement_audit() -> Dict[str, Any]:
         "net_pending_recovery": round(pending_total, 2)
     }
 
-def get_financial_health_and_emergency_fund() -> Dict[str, Any]:
+def get_financial_health_and_emergency_fund(user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     """
-    Calculates Diego's liquid emergency buffer in months of average burn rate,
-    and recommends a safe monthly contribution amount to the MSCI World fund.
+    Calculates liquid emergency buffer in months of average burn rate,
+    and recommends a safe monthly contribution amount to mutual funds.
     """
-    portfolio = get_portfolio_summary()
+    portfolio = get_portfolio_summary(user_id=user_id)
     liquid_cash = portfolio.get("liquid_cash", 0.0)
 
-    trends = get_multi_month_trends()
+    trends = get_multi_month_trends(user_id=user_id)
     if trends:
         avg_burn = sum(t["personal_expenses"] for t in trends) / len(trends)
         avg_income = sum(t["total_income"] for t in trends) / len(trends)
@@ -723,7 +729,7 @@ def get_financial_health_and_emergency_fund() -> Dict[str, Any]:
         "capital_global": round(portfolio.get("capital_global", 0.0), 2)
     }
 
-def search_transactions(query: str, limit: int = 15) -> List[Dict[str, Any]]:
+def search_transactions(query: str, user_id: str = "00000000-0000-0000-0000-000000000000", limit: int = 15) -> List[Dict[str, Any]]:
     """
     Search transactions by merchant, description, category or account.
     """
@@ -734,10 +740,10 @@ def search_transactions(query: str, limit: int = 15) -> List[Dict[str, Any]]:
     cursor.execute("""
     SELECT date, account, description, amount, category, is_reimbursable
     FROM transactions
-    WHERE description LIKE ? OR category LIKE ? OR account LIKE ?
+    WHERE (description LIKE ? OR category LIKE ? OR account LIKE ?) AND user_id = ?
     ORDER BY date DESC
     LIMIT ?
-    """, (pattern, pattern, pattern, limit))
+    """, (pattern, pattern, pattern, user_id, limit))
     rows = cursor.fetchall()
     conn.close()
 
@@ -753,7 +759,7 @@ def search_transactions(query: str, limit: int = 15) -> List[Dict[str, Any]]:
         })
     return results
 
-def get_day_of_week_analysis(month: Optional[str] = None) -> List[Dict[str, Any]]:
+def get_day_of_week_analysis(month: Optional[str] = None, user_id: str = "00000000-0000-0000-0000-000000000000") -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     query = """
@@ -762,9 +768,9 @@ def get_day_of_week_analysis(month: Optional[str] = None) -> List[Dict[str, Any]
         COUNT(*) as tx_count,
         SUM(CASE WHEN amount < 0 AND is_reimbursable = 0 AND category NOT IN ('Deudas y créditos', 'Inversiones y ahorros', 'Liquidación Tarjetas', 'Traspaso entre cuentas') THEN ABS(amount) ELSE 0 END) as total_spent
     FROM transactions
-    WHERE 1=1
+    WHERE user_id = ?
     """
-    params = []
+    params = [user_id]
     if month and month != "all":
         query += " AND date LIKE ?"
         params.append(f"{month}%")
@@ -799,16 +805,16 @@ def get_day_of_week_analysis(month: Optional[str] = None) -> List[Dict[str, Any]
         })
     return result
 
-def get_budget_50_30_20(month: Optional[str] = None) -> Dict[str, Any]:
+def get_budget_50_30_20(month: Optional[str] = None, user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
     
     query = """
     SELECT category, amount, is_reimbursable
     FROM transactions
-    WHERE 1=1
+    WHERE user_id = ?
     """
-    params = []
+    params = [user_id]
     if month and month != "all":
         query += " AND date LIKE ?"
         params.append(f"{month}%")
@@ -875,8 +881,8 @@ def get_budget_50_30_20(month: Optional[str] = None) -> Dict[str, Any]:
         }
     }
 
-def get_spending_anomalies(month: Optional[str] = None) -> List[Dict[str, Any]]:
-    matrix_data = get_category_matrix()
+def get_spending_anomalies(month: Optional[str] = None, user_id: str = "00000000-0000-0000-0000-000000000000") -> List[Dict[str, Any]]:
+    matrix_data = get_category_matrix(user_id=user_id)
     categories = matrix_data["categories"]
     months = matrix_data["months"]
 
@@ -921,7 +927,7 @@ def get_spending_anomalies(month: Optional[str] = None) -> List[Dict[str, Any]]:
     anomalies.sort(key=lambda x: abs(x["difference"]), reverse=True)
     return anomalies
 
-def get_top_merchants_for_month(month: Optional[str] = None, limit: int = 8) -> List[Dict[str, Any]]:
+def get_top_merchants_for_month(month: Optional[str] = None, user_id: str = "00000000-0000-0000-0000-000000000000", limit: int = 8) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -929,8 +935,9 @@ def get_top_merchants_for_month(month: Optional[str] = None, limit: int = 8) -> 
     SELECT description, amount, category
     FROM transactions
     WHERE amount < 0 AND is_reimbursable = 0 AND category NOT IN ('Deudas y créditos', 'Inversiones y ahorros', 'Liquidación Tarjetas', 'Traspaso entre cuentas')
+      AND user_id = ?
     """
-    params = []
+    params = [user_id]
     if month and month != "all":
         query += " AND date LIKE ?"
         params.append(f"{month}%")
@@ -963,28 +970,28 @@ def get_top_merchants_for_month(month: Optional[str] = None, limit: int = 8) -> 
         })
     return result
 
-def get_advanced_analytics(month: Optional[str] = None) -> Dict[str, Any]:
+def get_advanced_analytics(month: Optional[str] = None, user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     return {
-        "day_of_week": get_day_of_week_analysis(month),
-        "budget_50_30_20": get_budget_50_30_20(month),
-        "anomalies": get_spending_anomalies(month),
-        "top_merchants_month": get_top_merchants_for_month(month, 8)
+        "day_of_week": get_day_of_week_analysis(month, user_id=user_id),
+        "budget_50_30_20": get_budget_50_30_20(month, user_id=user_id),
+        "anomalies": get_spending_anomalies(month, user_id=user_id),
+        "top_merchants_month": get_top_merchants_for_month(month, user_id=user_id, limit=8)
     }
 
-def get_comprehensive_financial_profile() -> Dict[str, Any]:
+def get_comprehensive_financial_profile(user_id: str = "00000000-0000-0000-0000-000000000000") -> Dict[str, Any]:
     """
     Consolidates the complete multi-month analytics into a single rich profile
     for DeepSeek financial reasoning.
     """
     from backend.loans import get_loans_summary
-    portfolio = get_portfolio_summary()
-    trends = get_multi_month_trends()
-    category_matrix = get_category_matrix()
-    subscriptions = detect_recurring_subscriptions()
-    merchants = get_top_merchants(15)
-    reimbursements = get_reimbursement_audit()
-    health = get_financial_health_and_emergency_fund()
-    loans = get_loans_summary()
+    portfolio = get_portfolio_summary(user_id=user_id)
+    trends = get_multi_month_trends(user_id=user_id)
+    category_matrix = get_category_matrix(user_id=user_id)
+    subscriptions = detect_recurring_subscriptions(user_id=user_id)
+    merchants = get_top_merchants(user_id=user_id, limit=15)
+    reimbursements = get_reimbursement_audit(user_id=user_id)
+    health = get_financial_health_and_emergency_fund(user_id=user_id)
+    loans = get_loans_summary(user_id=user_id)
 
     return {
         "portfolio": portfolio,
@@ -995,16 +1002,16 @@ def get_comprehensive_financial_profile() -> Dict[str, Any]:
         "reimbursements": reimbursements,
         "health": health,
         "loans": loans,
-        "day_of_week": get_day_of_week_analysis(),
-        "budget_50_30_20": get_budget_50_30_20()
+        "day_of_week": get_day_of_week_analysis(user_id=user_id),
+        "budget_50_30_20": get_budget_50_30_20(user_id=user_id)
     }
 
-def build_llm_financial_context(user_query: Optional[str] = None) -> str:
+def build_llm_financial_context(user_query: Optional[str] = None, user_id: str = "00000000-0000-0000-0000-000000000000") -> str:
     """
     Builds a structured, comprehensive Notion-style markdown context
     containing all multi-month data, subscriptions, portfolio, loans, and relevant transaction queries.
     """
-    profile = get_comprehensive_financial_profile()
+    profile = get_comprehensive_financial_profile(user_id=user_id)
     portfolio = profile["portfolio"]
     trends = profile["trends"]
     subscriptions = profile["subscriptions"]

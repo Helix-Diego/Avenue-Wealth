@@ -130,7 +130,7 @@ export default function SettingsView({
 
   const fetchBackupInfo = async () => {
     try {
-      const res = await fetch('/api/backup/info');
+      const res = await authFetch('/api/backup/info');
       if (res.ok) {
         const data = await res.json();
         setBackupInfo(data);
@@ -156,7 +156,7 @@ export default function SettingsView({
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/backup/restore', {
+      const res = await authFetch('/api/backup/restore', {
         method: 'POST',
         body: formData,
       });
@@ -181,7 +181,7 @@ export default function SettingsView({
 
   const fetchAISettings = async () => {
     try {
-      const res = await fetch('/api/settings/ai');
+      const res = await authFetch('/api/settings/ai');
       const data = await res.json();
       setAiConfig(data);
       setSelectedModel(data.model || 'deepseek-chat');
@@ -194,7 +194,7 @@ export default function SettingsView({
   const fetchCategories = async () => {
     setLoadingCategories(true);
     try {
-      const res = await fetch('/api/categories');
+      const res = await authFetch('/api/categories');
       const data = await res.json();
       setCategories(data.categories || []);
       if (onCategoriesUpdated) onCategoriesUpdated();
@@ -208,7 +208,7 @@ export default function SettingsView({
   const fetchBanks = async () => {
     setLoadingBanks(true);
     try {
-      const res = await fetch('/api/settings/banks');
+      const res = await authFetch('/api/settings/banks');
       const data = await res.json();
       const banks = data.banks || [];
       setSupportedBanks(banks);
@@ -226,7 +226,7 @@ export default function SettingsView({
 
   const fetchGeneralSettings = async () => {
     try {
-      const res = await fetch('/api/settings/general');
+      const res = await authFetch('/api/settings/general');
       const data = await res.json();
       setGeneralSettings({
         user_name: data.user_name || 'Mi Espacio',
@@ -251,7 +251,7 @@ export default function SettingsView({
       if (inputApiKey.trim()) {
         payload.api_key = inputApiKey.trim();
       }
-      const res = await fetch('/api/settings/ai', {
+      const res = await authFetch('/api/settings/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -284,7 +284,7 @@ export default function SettingsView({
       if (inputApiKey.trim()) {
         payload.api_key = inputApiKey.trim();
       }
-      const res = await fetch('/api/settings/ai/test', {
+      const res = await authFetch('/api/settings/ai/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -304,7 +304,7 @@ export default function SettingsView({
     if (!newCategoryName.trim()) return;
     setCategoryError(null);
     try {
-      const res = await fetch('/api/categories', {
+      const res = await authFetch('/api/categories', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -327,7 +327,7 @@ export default function SettingsView({
 
   const handleDeleteCategory = async (catName) => {
     try {
-      const res = await fetch(`/api/categories/${encodeURIComponent(catName)}`, {
+      const res = await authFetch(`/api/categories/${encodeURIComponent(catName)}`, {
         method: 'DELETE'
       });
       if (!res.ok) {
@@ -360,7 +360,7 @@ export default function SettingsView({
     setEditingSaving(true);
     setEditCategoryError(null);
     try {
-      const res = await fetch(`/api/categories/${encodeURIComponent(editingCategory.originalName)}`, {
+      const res = await authFetch(`/api/categories/${encodeURIComponent(editingCategory.originalName)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -389,7 +389,7 @@ export default function SettingsView({
     // Optimistic UI update
     setSupportedBanks(prev => prev.map(b => b.id === bankId ? { ...b, enabled: nextState ? 1 : 0 } : b));
     try {
-      await fetch(`/api/settings/banks/${bankId}`, {
+      await authFetch(`/api/settings/banks/${bankId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: nextState })
@@ -405,7 +405,7 @@ export default function SettingsView({
     setSavingBankAliasId(bankId);
     const aliasVal = (bankAliases[bankId] || '').trim();
     try {
-      const res = await fetch(`/api/settings/banks/${bankId}`, {
+      const res = await authFetch(`/api/settings/banks/${bankId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alias: aliasVal })
@@ -427,7 +427,7 @@ export default function SettingsView({
     e.preventDefault();
     setGeneralSaving(true);
     try {
-      await fetch('/api/settings/general', {
+      await authFetch('/api/settings/general', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(generalSettings)
@@ -446,7 +446,7 @@ export default function SettingsView({
   const handleExecuteResetData = async () => {
     setResettingData(true);
     try {
-      const res = await fetch('/api/settings/reset-data', {
+      const res = await authFetch('/api/settings/reset-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keep_settings: true })

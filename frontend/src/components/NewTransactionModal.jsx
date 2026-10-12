@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authFetch } from '../supabaseClient';
 import { X, Briefcase, Plus } from 'lucide-react';
 
 export default function NewTransactionModal({ 
@@ -32,7 +33,7 @@ export default function NewTransactionModal({
   ]);
 
   React.useEffect(() => {
-    fetch('/api/settings/banks')
+    authFetch('/api/settings/banks')
       .then(res => res.json())
       .then(data => {
         if (data?.banks) {

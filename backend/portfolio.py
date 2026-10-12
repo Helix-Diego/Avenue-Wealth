@@ -130,7 +130,7 @@ def fetch_eur_usd_rate() -> float:
 
     return 1.137
 
-def add_or_update_stock_holding(symbol: str, name: str, shares: float, avg_price: float, currency: str = "USD") -> dict:
+def add_or_update_stock_holding(symbol: str, name: str, shares: float, avg_price: float, currency: str = "USD", user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     """
     Adds or updates a stock position in the user's local portfolio.
     Immediately fetches latest live quote from Finnhub.
@@ -144,9 +144,9 @@ def add_or_update_stock_holding(symbol: str, name: str, shares: float, avg_price
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO portfolio_stocks (symbol, name, shares, avg_price, currency, current_price, price_change_24h, last_updated)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(symbol) DO UPDATE SET
+    INSERT INTO portfolio_stocks (symbol, user_id, name, shares, avg_price, currency, current_price, price_change_24h, last_updated)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(symbol, user_id) DO UPDATE SET
         name = coalesce(nullif(excluded.name, ''), portfolio_stocks.name),
         shares = excluded.shares,
         avg_price = excluded.avg_price,
@@ -154,7 +154,7 @@ def add_or_update_stock_holding(symbol: str, name: str, shares: float, avg_price
         current_price = case when excluded.current_price > 0 then excluded.current_price else portfolio_stocks.current_price end,
         price_change_24h = excluded.price_change_24h,
         last_updated = excluded.last_updated
-    """, (clean_sym, name.strip(), float(shares), float(avg_price), currency, curr_price, chg_24h, now))
+    """, (clean_sym, user_id, name.strip(), float(shares), float(avg_price), currency, curr_price, chg_24h, now))
     conn.commit()
     conn.close()
 
@@ -168,21 +168,24 @@ def add_or_update_stock_holding(symbol: str, name: str, shares: float, avg_price
         "currency": currency
     }
 
-def delete_stock_holding(symbol: str) -> dict:
+def delete_stock_holding(symbol: str, user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM portfolio_stocks WHERE symbol = ?", (symbol.strip().upper(),))
+    cursor.execute("DELETE FROM portfolio_stocks WHERE symbol = ? AND user_id = ?", (symbol.strip().upper(), user_id))
     conn.commit()
     conn.close()
     return {"status": "deleted", "symbol": symbol}
 
-def refresh_all_stock_quotes() -> list:
+def refresh_all_stock_quotes(user_id: str = None) -> list:
     """
-    Refreshes Finnhub live quotes for all user stocks in portfolio_stocks table.
+    Refreshes Finnhub live quotes for user stocks in portfolio_stocks table.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT symbol FROM portfolio_stocks WHERE shares > 0")
+    if user_id:
+        cursor.execute("SELECT DISTINCT symbol FROM portfolio_stocks WHERE shares > 0 AND user_id = ?", (user_id,))
+    else:
+        cursor.execute("SELECT DISTINCT symbol FROM portfolio_stocks WHERE shares > 0")
     symbols = [r["symbol"] for r in cursor.fetchall()]
 
     updated = []
@@ -190,11 +193,18 @@ def refresh_all_stock_quotes() -> list:
     for sym in symbols:
         q = fetch_live_stock_quote(sym)
         if q["price"] > 0:
-            cursor.execute("""
-            UPDATE portfolio_stocks
-            SET current_price = ?, price_change_24h = ?, last_updated = ?
-            WHERE symbol = ?
-            """, (q["price"], q["change_pct"], now, sym))
+            if user_id:
+                cursor.execute("""
+                UPDATE portfolio_stocks
+                SET current_price = ?, price_change_24h = ?, last_updated = ?
+                WHERE symbol = ? AND user_id = ?
+                """, (q["price"], q["change_pct"], now, sym, user_id))
+            else:
+                cursor.execute("""
+                UPDATE portfolio_stocks
+                SET current_price = ?, price_change_24h = ?, last_updated = ?
+                WHERE symbol = ?
+                """, (q["price"], q["change_pct"], now, sym))
             updated.append(q)
 
     conn.commit()
@@ -330,7 +340,8 @@ def record_fund_contribution(
     nav_price: float = None,
     shares: float = None,
     notes: str = "",
-    funding_account: str = "Santander"
+    funding_account: str = "Santander",
+    user_id: str = "00000000-0000-0000-0000-000000000000"
 ) -> dict:
     """
     Records a contribution / subscription for ANY registered fund.
@@ -364,32 +375,33 @@ def record_fund_contribution(
     fund_title = fund_row["name"] if fund_row else clean_isin
     sub_notes = notes.strip() or f"Aportación {fund_title}"
 
-    # Insert contribution record
+    # Insert contribution record scoped to user_id
     cursor.execute("""
-    INSERT INTO fund_contributions (fund_isin, date, shares, invested_amount, nav_price, funding_account, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (clean_isin, date_str, final_shares, inv_amount, round(final_nav, 4), funding_account, sub_notes))
+    INSERT INTO fund_contributions (fund_isin, user_id, date, shares, invested_amount, nav_price, funding_account, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (clean_isin, user_id, date_str, final_shares, inv_amount, round(final_nav, 4), funding_account, sub_notes))
     contrib_id = cursor.lastrowid
 
-    # Recalculate total_shares in fund_info for this fund
-    cursor.execute("SELECT SUM(shares) FROM fund_contributions WHERE fund_isin = ?", (clean_isin,))
-    total_shares = cursor.fetchone()[0] or 0.0
+    # Recalculate total_shares in fund_info for this fund across user contributions
+    cursor.execute("SELECT SUM(shares) FROM fund_contributions WHERE fund_isin = ? AND user_id = ?", (clean_isin, user_id))
+    user_shares = cursor.fetchone()[0] or 0.0
 
     now = datetime.now().isoformat()
     cursor.execute("""
     UPDATE fund_info
     SET total_shares = ?, latest_nav = ?, last_updated = ?
     WHERE isin = ?
-    """, (round(total_shares, 4), round(final_nav, 4), now, clean_isin))
+    """, (round(user_shares, 4), round(final_nav, 4), now, clean_isin))
 
-    # Also register corresponding outflow in transactions
+    # Also register corresponding outflow in transactions for this user
     cursor.execute("""
     INSERT INTO transactions (
-        date, account, description, raw_description, amount, currency,
+        user_id, date, account, description, raw_description, amount, currency,
         category, is_reimbursable, reimbursement_status, needs_clarification,
         confidence, notes
-    ) VALUES (?, ?, ?, ?, ?, 'EUR', 'Inversiones y ahorros', 0, 'none', 0, 1.0, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, 'EUR', 'Inversiones y ahorros', 0, 'none', 0, 1.0, ?)
     """, (
+        user_id,
         date_str,
         funding_account or "Santander",
         f"Aportación {fund_title} ({final_shares:.2f} part.)",
@@ -406,32 +418,30 @@ def record_fund_contribution(
         "contribution_id": contrib_id,
         "isin": clean_isin,
         "shares": final_shares,
-        "total_shares": round(total_shares, 4),
+        "total_shares": round(user_shares, 4),
         "latest_nav": final_nav,
         "invested_amount": inv_amount
     }
 
-def delete_fund_contribution(contrib_id: int) -> dict:
+def delete_fund_contribution(contrib_id: int, user_id: str = "00000000-0000-0000-0000-000000000000") -> dict:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT fund_isin FROM fund_contributions WHERE id = ?", (contrib_id,))
+    cursor.execute("SELECT fund_isin FROM fund_contributions WHERE id = ? AND user_id = ?", (contrib_id, user_id))
     row = cursor.fetchone()
     if not row:
         conn.close()
         raise ValueError("Aportación no encontrada.")
 
     fund_isin = row["fund_isin"] or "IE00BYX5P602"
-    cursor.execute("DELETE FROM fund_contributions WHERE id = ?", (contrib_id,))
+    cursor.execute("DELETE FROM fund_contributions WHERE id = ? AND user_id = ?", (contrib_id, user_id))
 
-    # Recalculate total_shares
-    cursor.execute("SELECT SUM(shares) FROM fund_contributions WHERE fund_isin = ?", (fund_isin,))
+    # Recalculate user shares
+    cursor.execute("SELECT SUM(shares) FROM fund_contributions WHERE fund_isin = ? AND user_id = ?", (fund_isin, user_id))
     total_shares = cursor.fetchone()[0] or 0.0
 
-    cursor.execute("""
-    UPDATE fund_info
-    SET total_shares = ?, last_updated = ?
-    WHERE isin = ?
-    """, (round(total_shares, 4), datetime.now().isoformat(), fund_isin))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted", "contribution_id": contrib_id, "total_shares": total_shares}
 
     conn.commit()
     conn.close()
@@ -462,21 +472,21 @@ def refresh_all_funds_nav() -> list:
     conn.close()
     return updated
 
-def record_fund_subscription_from_statement(conn, date_str: str, amount_eur: float, notes: str = "", isin: str = "IE00BYX5P602"):
+def record_fund_subscription_from_statement(conn, date_str: str, amount_eur: float, notes: str = "", isin: str = "IE00BYX5P602", user_id: str = "00000000-0000-0000-0000-000000000000"):
     """
     Records or updates a mutual fund subscription detected in an imported statement (e.g. MyInvestor).
-    Prevents duplicate entries.
+    Prevents duplicate entries scoped to user_id.
     """
     cursor = conn.cursor()
     inv_amount = round(abs(amount_eur), 2)
     if inv_amount <= 0:
         return None
 
-    # Check duplicate
+    # Check duplicate scoped to user_id
     cursor.execute("""
     SELECT id FROM fund_contributions
-    WHERE fund_isin = ? AND date = ? AND abs(invested_amount - ?) < 0.02
-    """, (isin, date_str, inv_amount))
+    WHERE fund_isin = ? AND date = ? AND abs(invested_amount - ?) < 0.02 AND user_id = ?
+    """, (isin, date_str, inv_amount, user_id))
     if cursor.fetchone():
         return None
 
@@ -489,11 +499,11 @@ def record_fund_subscription_from_statement(conn, date_str: str, amount_eur: flo
     sub_notes = notes or f"Suscripción fondo {isin}"
 
     cursor.execute("""
-    INSERT INTO fund_contributions (fund_isin, date, shares, invested_amount, nav_price, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, (isin, date_str, shares, inv_amount, round(current_nav, 4), sub_notes))
+    INSERT INTO fund_contributions (fund_isin, user_id, date, shares, invested_amount, nav_price, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (isin, user_id, date_str, shares, inv_amount, round(current_nav, 4), sub_notes))
 
-    cursor.execute("SELECT SUM(shares) FROM fund_contributions WHERE fund_isin = ?", (isin,))
+    cursor.execute("SELECT SUM(shares) FROM fund_contributions WHERE fund_isin = ? AND user_id = ?", (isin, user_id))
     total_shares = cursor.fetchone()[0] or 0.0
     cursor.execute("""
     UPDATE fund_info
@@ -600,7 +610,7 @@ def get_portfolio_summary(user_id: str = "00000000-0000-0000-0000-000000000000")
         contrib_shares = float(contrib_sums[0] or 0.0)
         contrib_invested = float(contrib_sums[1] or 0.0)
 
-        tot_shares = max(float(f_row["total_shares"] or 0.0), contrib_shares)
+        tot_shares = contrib_shares
         f_val = tot_shares * f_nav
         f_pnl = f_val - contrib_invested if contrib_invested > 0 else 0.0
         f_pnl_pct = (f_pnl / contrib_invested * 100) if contrib_invested > 0 else 0.0

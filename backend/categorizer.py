@@ -827,7 +827,7 @@ def learn_rule_and_retroactively_apply(pattern: str, category: str, is_reimbursa
         "updated_transactions": updated_count
     }
 
-def find_transfer_counterpart(tx_id: int):
+def find_transfer_counterpart(tx_id: int, user_id: str = None):
     """
     Given a transaction ID, searches for reciprocal transfer counterparts in other accounts.
     Criteria:
@@ -838,7 +838,10 @@ def find_transfer_counterpart(tx_id: int):
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,))
+    if user_id:
+        cursor.execute("SELECT * FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id))
+    else:
+        cursor.execute("SELECT * FROM transactions WHERE id = ?", (tx_id,))
     target_row = cursor.fetchone()
     if not target_row:
         conn.close()
@@ -848,7 +851,7 @@ def find_transfer_counterpart(tx_id: int):
     t_date = target["date"]
     t_acc = target["account"]
 
-    t_user_id = target.get("user_id")
+    t_user_id = user_id or target.get("user_id")
 
     # Candidate query
     user_filter = "AND user_id = ?" if t_user_id else ""
@@ -916,65 +919,79 @@ def find_transfer_counterpart(tx_id: int):
         "message": f"Encontrado movimiento espejo en {best['account']} ({best['amount']:+.2f}€ el {best['date']})"
     }
 
-def pair_transfers(tx_id_1: int, tx_id_2: int):
+def pair_transfers(tx_id_1: int, tx_id_2: int, user_id: str = None):
     """
-    Pairs two transactions as reciprocal sides of an internal transfer.
+    Pairs two transactions as reciprocal sides of an internal transfer,
+    ensuring both transactions belong to the same tenant.
     """
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, date, account, amount, description FROM transactions WHERE id IN (?, ?)", (tx_id_1, tx_id_2))
+    if user_id:
+        cursor.execute("SELECT id, date, account, amount, description FROM transactions WHERE id IN (?, ?) AND user_id = ?", (tx_id_1, tx_id_2, user_id))
+    else:
+        cursor.execute("SELECT id, date, account, amount, description FROM transactions WHERE id IN (?, ?)", (tx_id_1, tx_id_2))
     rows = cursor.fetchall()
     if len(rows) < 2:
         conn.close()
-        return {"status": "error", "message": "Una o ambas transacciones no existen"}
+        return {"status": "error", "message": "Una o ambas transacciones no existen o no pertenecen al usuario actual."}
 
-    cursor.execute("""
+    user_clause = "AND user_id = ?" if user_id else ""
+    params_1 = [tx_id_2, tx_id_2, tx_id_1] + ([user_id] if user_id else [])
+    params_2 = [tx_id_1, tx_id_1, tx_id_2] + ([user_id] if user_id else [])
+
+    cursor.execute(f"""
     UPDATE transactions
     SET linked_tx_id = ?,
         category = 'Traspaso entre cuentas',
         needs_clarification = 0,
         confidence = 1.0,
         notes = coalesce(notes, '') || ' [Emparejado con ID #' || ? || ']'
-    WHERE id = ?
-    """, (tx_id_2, tx_id_2, tx_id_1))
+    WHERE id = ? {user_clause}
+    """, params_1)
 
-    cursor.execute("""
+    cursor.execute(f"""
     UPDATE transactions
     SET linked_tx_id = ?,
         category = 'Traspaso entre cuentas',
         needs_clarification = 0,
         confidence = 1.0,
         notes = coalesce(notes, '') || ' [Emparejado con ID #' || ? || ']'
-    WHERE id = ?
-    """, (tx_id_1, tx_id_1, tx_id_2))
+    WHERE id = ? {user_clause}
+    """, params_2)
 
     conn.commit()
     conn.close()
 
     return {"status": "paired", "tx_id_1": tx_id_1, "tx_id_2": tx_id_2}
 
-def unpair_transfer(tx_id: int):
+def unpair_transfer(tx_id: int, user_id: str = None):
     """
-    Unlinks a paired transfer.
+    Unlinks a paired transfer scoped to the authenticated tenant.
     """
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT linked_tx_id FROM transactions WHERE id = ?", (tx_id,))
+    if user_id:
+        cursor.execute("SELECT linked_tx_id FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id))
+    else:
+        cursor.execute("SELECT linked_tx_id FROM transactions WHERE id = ?", (tx_id,))
     row = cursor.fetchone()
     if not row or not row[0]:
         conn.close()
         return {"status": "not_paired"}
 
     other_id = row[0]
-    cursor.execute("UPDATE transactions SET linked_tx_id = NULL WHERE id IN (?, ?)", (tx_id, other_id))
+    if user_id:
+        cursor.execute("UPDATE transactions SET linked_tx_id = NULL WHERE id IN (?, ?) AND user_id = ?", (tx_id, other_id, user_id))
+    else:
+        cursor.execute("UPDATE transactions SET linked_tx_id = NULL WHERE id IN (?, ?)", (tx_id, other_id))
     conn.commit()
     conn.close()
 
     return {"status": "unpaired", "tx_id": tx_id, "other_id": other_id}
 
-def auto_pair_internal_transfers(target_ids: list = None):
+def auto_pair_internal_transfers(target_ids: list = None, user_id: str = None):
     """
     Scans for unpaired transfer transactions and pairs high-confidence matches.
     If target_ids is provided, focuses on those. Otherwise checks all unpaired transfers.
@@ -985,20 +1002,39 @@ def auto_pair_internal_transfers(target_ids: list = None):
 
     if target_ids:
         placeholders = ",".join("?" for _ in target_ids)
-        cursor.execute(f"""
-        SELECT id FROM transactions
-        WHERE id IN ({placeholders})
-          AND category = 'Traspaso entre cuentas'
-          AND linked_tx_id IS NULL
-        ORDER BY date DESC
-        """, target_ids)
+        if user_id:
+            cursor.execute(f"""
+            SELECT id FROM transactions
+            WHERE id IN ({placeholders})
+              AND category = 'Traspaso entre cuentas'
+              AND linked_tx_id IS NULL
+              AND user_id = ?
+            ORDER BY date DESC
+            """, target_ids + [user_id])
+        else:
+            cursor.execute(f"""
+            SELECT id FROM transactions
+            WHERE id IN ({placeholders})
+              AND category = 'Traspaso entre cuentas'
+              AND linked_tx_id IS NULL
+            ORDER BY date DESC
+            """, target_ids)
     else:
-        cursor.execute("""
-        SELECT id FROM transactions
-        WHERE category = 'Traspaso entre cuentas'
-          AND linked_tx_id IS NULL
-        ORDER BY date DESC
-        """)
+        if user_id:
+            cursor.execute("""
+            SELECT id FROM transactions
+            WHERE category = 'Traspaso entre cuentas'
+              AND linked_tx_id IS NULL
+              AND user_id = ?
+            ORDER BY date DESC
+            """, (user_id,))
+        else:
+            cursor.execute("""
+            SELECT id FROM transactions
+            WHERE category = 'Traspaso entre cuentas'
+              AND linked_tx_id IS NULL
+            ORDER BY date DESC
+            """)
 
     unpaired_ids = [r[0] for r in cursor.fetchall()]
     conn.close()
@@ -1010,7 +1046,7 @@ def auto_pair_internal_transfers(target_ids: list = None):
     for tid in unpaired_ids:
         if tid in already_paired_ids:
             continue
-        res = find_transfer_counterpart(tid)
+        res = find_transfer_counterpart(tid, user_id=user_id)
         if not res or not res.get("candidate"):
             continue
 
@@ -1020,7 +1056,7 @@ def auto_pair_internal_transfers(target_ids: list = None):
             continue
 
         if res.get("auto_pairable"):
-            pair_transfers(tid, cand_id)
+            pair_transfers(tid, cand_id, user_id=user_id)
             already_paired_ids.add(tid)
             already_paired_ids.add(cand_id)
             paired_count += 1
@@ -1028,13 +1064,22 @@ def auto_pair_internal_transfers(target_ids: list = None):
             conn = get_connection()
             cur = conn.cursor()
             q = f"Posible traspaso con {cand['account']} ({cand['amount']:+.2f}€ el {cand['date']}). ¿Confirmar emparejamiento?"
-            cur.execute("""
-            UPDATE transactions
-            SET needs_clarification = 1,
-                suggested_category = 'Traspaso entre cuentas',
-                clarification_question = ?
-            WHERE id = ? AND linked_tx_id IS NULL
-            """, (q, tid))
+            if user_id:
+                cur.execute("""
+                UPDATE transactions
+                SET needs_clarification = 1,
+                    suggested_category = 'Traspaso entre cuentas',
+                    clarification_question = ?
+                WHERE id = ? AND linked_tx_id IS NULL AND user_id = ?
+                """, (q, tid, user_id))
+            else:
+                cur.execute("""
+                UPDATE transactions
+                SET needs_clarification = 1,
+                    suggested_category = 'Traspaso entre cuentas',
+                    clarification_question = ?
+                WHERE id = ? AND linked_tx_id IS NULL
+                """, (q, tid))
             conn.commit()
             conn.close()
             flagged_count += 1

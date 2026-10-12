@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   HelpCircle, 
   CheckCircle2, 
@@ -53,14 +54,14 @@ export default function ClarificationQueue({
   const handleConfirmTransferPair = async (tx) => {
     setResolvingId(tx.id);
     try {
-      const res = await fetch('/api/transactions/find-transfer-pair', {
+      const res = await authFetch('/api/transactions/find-transfer-pair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_id: tx.id })
       });
       const data = await res.json();
       if (data.candidate) {
-        await fetch('/api/transactions/pair-transfers', {
+        await authFetch('/api/transactions/pair-transfers', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

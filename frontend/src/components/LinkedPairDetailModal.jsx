@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   X, 
   ArrowLeftRight, 
@@ -30,7 +31,7 @@ export default function LinkedPairDetailModal({
       setLoading(true);
       setErrorMsg('');
       setConfirmUnpair(false);
-      fetch(`/api/transactions/${txId}/linked-pair`)
+      authFetch(`/api/transactions/${txId}/linked-pair`)
         .then(res => {
           if (!res.ok) throw new Error('No se pudo cargar el traspaso vinculado');
           return res.json();
@@ -51,7 +52,7 @@ export default function LinkedPairDetailModal({
   const handleUnpair = async () => {
     setUnpairing(true);
     try {
-      const res = await fetch('/api/transactions/unpair-transfer', {
+      const res = await authFetch('/api/transactions/unpair-transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_id: txId })

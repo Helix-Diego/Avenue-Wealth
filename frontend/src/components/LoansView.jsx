@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../supabaseClient';
 import {
   Landmark,
   Percent,
@@ -82,7 +83,7 @@ export default function LoansView({ setActiveTab }) {
   const fetchLoans = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/loans');
+      const res = await authFetch('/api/loans');
       const data = await res.json();
       setLoansData(data);
       if (data.loans && data.loans.length > 0) {
@@ -155,7 +156,7 @@ export default function LoansView({ setActiveTab }) {
       : calcFrenchPayment(createForm.initial_principal, createForm.interest_rate_pct, createForm.term_months);
 
     try {
-      const res = await fetch('/api/loans', {
+      const res = await authFetch('/api/loans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -200,7 +201,7 @@ export default function LoansView({ setActiveTab }) {
         monthly_installment: parseFloat(editForm.monthly_installment) || 0,
         term_months: parseInt(editForm.term_months, 10) || 12
       };
-      const res = await fetch(`/api/loans/${loanId}`, {
+      const res = await authFetch(`/api/loans/${loanId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -220,7 +221,7 @@ export default function LoansView({ setActiveTab }) {
       return;
     }
     try {
-      const res = await fetch(`/api/loans/${loanId}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/loans/${loanId}`, { method: 'DELETE' });
       const data = await res.json();
       setLoansData(data);
       setEditingLoan(null);
@@ -245,7 +246,7 @@ export default function LoansView({ setActiveTab }) {
   const fetchCandidates = async (query = '') => {
     setLoadingCandidates(true);
     try {
-      const res = await fetch(`/api/loans/search-candidates?q=${encodeURIComponent(query)}`);
+      const res = await authFetch(`/api/loans/search-candidates?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       setCandidateList(data);
     } catch (err) {
@@ -264,7 +265,7 @@ export default function LoansView({ setActiveTab }) {
   const handleLinkTransactions = async () => {
     if (!selectedLoan || selectedCandidateIds.length === 0) return;
     try {
-      const res = await fetch(`/api/loans/${selectedLoan.id}/link`, {
+      const res = await authFetch(`/api/loans/${selectedLoan.id}/link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_ids: selectedCandidateIds })
@@ -283,7 +284,7 @@ export default function LoansView({ setActiveTab }) {
   const handleUnlinkTransaction = async (txId) => {
     if (!selectedLoan) return;
     try {
-      const res = await fetch(`/api/loans/${selectedLoan.id}/unlink`, {
+      const res = await authFetch(`/api/loans/${selectedLoan.id}/unlink`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_ids: [txId] })

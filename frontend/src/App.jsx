@@ -93,10 +93,31 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Allowed beta users
+  const ALLOWED_BETA_EMAILS = ['diegotcach@gmail.com', 'carla.garcia.faya@gmail.com'];
+
   // Listen to Supabase Auth state changes
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
+    const checkEmailAccess = async (session) => {
+      if (!session?.user) {
+        setCurrentUser(null);
+        setIsOnboarding(true);
+        return false;
+      }
+      const email = session.user.email?.toLowerCase()?.trim();
+      if (email && !ALLOWED_BETA_EMAILS.includes(email) && !email.endsWith('@avenue.wealth')) {
+        alert(`Acceso restringido: Avenue Wealth está en fase beta privada. El correo '${email}' no tiene acceso autorizado.`);
+        await supabase.auth.signOut();
+        setCurrentUser(null);
+        setIsOnboarding(true);
+        return false;
+      }
+      return true;
+    };
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      const allowed = await checkEmailAccess(session);
+      if (allowed && session?.user) {
         setCurrentUser(session.user);
         if (session.user.user_metadata?.full_name) {
           setUserName(session.user.user_metadata.full_name);
@@ -105,16 +126,20 @@ export default function App() {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user) {
-        setCurrentUser(session.user);
-        if (session.user.user_metadata?.full_name) {
-          setUserName(session.user.user_metadata.full_name);
-        }
-        refreshAll();
-      } else if (event === 'SIGNED_OUT') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT' || !session?.user) {
         setCurrentUser(null);
+        setIsOnboarding(true);
         refreshAll();
+      } else if (session?.user) {
+        const allowed = await checkEmailAccess(session);
+        if (allowed) {
+          setCurrentUser(session.user);
+          if (session.user.user_metadata?.full_name) {
+            setUserName(session.user.user_metadata.full_name);
+          }
+          refreshAll();
+        }
       }
     });
 
@@ -136,7 +161,7 @@ export default function App() {
       const res = await authFetch(url);
       const data = await res.json();
       setSummary(data);
-      if (data?.available_months?.length > 0 && selectedMonth !== 'all' && !data.available_months.includes(selectedMonth)) {
+      if (data?.available_months?.length > 0 && monthStr !== 'all' && !data.available_months.includes(monthStr)) {
         setSelectedMonth(data.available_months[0]);
       }
     } catch (err) {
@@ -258,7 +283,7 @@ export default function App() {
   const handleExecuteUndo = async () => {
     if (!undoToast) return;
     try {
-      await fetch('/api/transactions/batch-undo', {
+      await authFetch('/api/transactions/batch-undo', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -277,7 +302,7 @@ export default function App() {
 
   const handleResolveClarification = async (payload) => {
     try {
-      const res = await fetch('/api/clarifications/resolve', {
+      const res = await authFetch('/api/clarifications/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -300,7 +325,7 @@ export default function App() {
 
   const handleCreateTransaction = async (txData) => {
     try {
-      await fetch('/api/transactions', {
+      await authFetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(txData)
@@ -313,7 +338,7 @@ export default function App() {
 
   const handleUpdateTransaction = async (id, updateData) => {
     try {
-      await fetch(`/api/transactions/${id}`, {
+      await authFetch(`/api/transactions/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData)
@@ -327,7 +352,7 @@ export default function App() {
   const handleDeleteTransaction = async (id) => {
     if (!window.confirm('¿Seguro que deseas eliminar este movimiento?')) return;
     try {
-      await fetch(`/api/transactions/${id}`, { method: 'DELETE' });
+      await authFetch(`/api/transactions/${id}`, { method: 'DELETE' });
       await refreshAll();
     } catch (err) {
       console.error('Error deleting transaction:', err);
@@ -337,7 +362,7 @@ export default function App() {
   const handleSaveFundContribution = async (contribData) => {
     try {
       const isin = contribData.fund_isin || 'IE00BYX5P602';
-      await fetch(`/api/portfolio/funds/${encodeURIComponent(isin)}/contribution`, {
+      await authFetch(`/api/portfolio/funds/${encodeURIComponent(isin)}/contribution`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(contribData)
@@ -499,7 +524,7 @@ export default function App() {
 
       {/* Windows 11 Out-of-Box Experience Onboarding Modal */}
       <OnboardingModal
-        isOpen={isOnboarding}
+        isOpen={isOnboarding || !currentUser}
         onComplete={() => {
           setIsOnboarding(false);
           setActiveTab('dashboard');

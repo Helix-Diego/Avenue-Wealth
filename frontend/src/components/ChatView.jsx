@@ -18,6 +18,7 @@ import {
   Plus
 } from 'lucide-react';
 import MarkdownRenderer from './MarkdownRenderer';
+import { authFetch } from '../supabaseClient';
 
 export const INITIAL_CHAT_MESSAGE = {
   role: 'assistant',
@@ -83,7 +84,7 @@ export default function ChatView({
 
   // Fetch live financial analytics profile for the top ribbon
   useEffect(() => {
-    fetch('/api/analytics/profile')
+    authFetch('/api/analytics/profile')
       .then(res => res.json())
       .then(data => setProfileData(data))
       .catch(err => console.error('Error fetching analytics profile:', err));
@@ -99,7 +100,7 @@ export default function ChatView({
     setLoading(true);
 
     try {
-      const res = await fetch('/api/chat', {
+      const res = await authFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

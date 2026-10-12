@@ -50,6 +50,7 @@ import {
   Area, 
   ReferenceLine 
 } from 'recharts';
+import { authFetch } from '../supabaseClient';
 
 export default function DashboardView({ 
   summary, 
@@ -76,7 +77,7 @@ export default function DashboardView({
 
   useEffect(() => {
     setLoadingMatrix(true);
-    fetch('/api/analytics/balance-matrix')
+    authFetch('/api/analytics/balance-matrix')
       .then(res => res.json())
       .then(data => {
         setBalanceMatrix(data);
@@ -156,7 +157,7 @@ export default function DashboardView({
 
   useEffect(() => {
     setLoadingAdvanced(true);
-    fetch(`/api/analytics/advanced?month=${selectedMonth}`)
+    authFetch(`/api/analytics/advanced?month=${selectedMonth}`)
       .then(res => res.json())
       .then(data => setAdvancedData(data))
       .catch(err => console.error('Error fetching advanced analytics:', err))

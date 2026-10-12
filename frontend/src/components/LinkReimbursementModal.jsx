@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   X, 
   Link2, 
@@ -35,7 +36,7 @@ export default function LinkReimbursementModal({
   const fetchPendingExpenses = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/company-expenses/pending-expenses');
+      const res = await authFetch('/api/company-expenses/pending-expenses');
       const data = await res.json();
       const expenses = data.pending_expenses || [];
       setPendingExpenses(expenses);
@@ -88,7 +89,7 @@ export default function LinkReimbursementModal({
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/company-expenses/link-reimbursement', {
+      const res = await authFetch('/api/company-expenses/link-reimbursement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -145,6 +145,22 @@ def get_current_user(
 
     email = payload.get("email") or f"{user_id}@user.avenuewealth"
     
+    # Whitelist check for private development
+    raw_allowed = os.environ.get("ALLOWED_EMAILS", "diegotcach@gmail.com,carla.garcia.faya@gmail.com")
+    allowed_list = [e.strip().lower() for e in raw_allowed.split(",") if e.strip()]
+    clean_email = email.lower().strip()
+    is_whitelisted = (
+        clean_email in allowed_list
+        or clean_email == DEFAULT_DEV_EMAIL.lower()
+        or clean_email.endswith("@avenue.wealth")
+        or "*" in allowed_list
+    )
+    if clean_email and not is_whitelisted:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Acceso restringido: Avenue Wealth está en fase beta privada. El correo '{clean_email}' no está en la lista de acceso autorizado."
+        )
+    
     # Extract role from metadata (Supabase user_metadata or app_metadata)
     role = "user"
     app_meta = payload.get("app_metadata", {})

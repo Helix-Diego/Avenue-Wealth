@@ -108,7 +108,7 @@ export default function TransactionsView({
 
   const handleUnpair = async (txId) => {
     try {
-      await fetch('/api/transactions/unpair-transfer', {
+      await authFetch('/api/transactions/unpair-transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_id: txId })
@@ -123,7 +123,7 @@ export default function TransactionsView({
 
   const handleSearchTransferPair = async (tx) => {
     try {
-      const res = await fetch('/api/transactions/find-transfer-pair', {
+      const res = await authFetch('/api/transactions/find-transfer-pair', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_id: tx.id })
@@ -164,7 +164,7 @@ export default function TransactionsView({
 
   const fetchLoansList = async () => {
     try {
-      const res = await fetch('/api/loans');
+      const res = await authFetch('/api/loans');
       const data = await res.json();
       if (data && data.loans) {
         setLoansList(data.loans);
@@ -214,7 +214,7 @@ export default function TransactionsView({
         const m = parseInt(newLoanForm.term_months, 10) || 6;
         const pmt = newLoanForm.monthly_installment ? parseFloat(newLoanForm.monthly_installment) : (p / m);
 
-        const createRes = await fetch('/api/loans', {
+        const createRes = await authFetch('/api/loans', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -234,7 +234,7 @@ export default function TransactionsView({
       }
 
       if (targetLoanId) {
-        await fetch(`/api/loans/${targetLoanId}/link`, {
+        await authFetch(`/api/loans/${targetLoanId}/link`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ transaction_ids: txIds })
@@ -252,7 +252,7 @@ export default function TransactionsView({
 
   const handleUnlinkLoan = async (txId, loanId) => {
     try {
-      await fetch(`/api/loans/${loanId}/unlink`, {
+      await authFetch(`/api/loans/${loanId}/unlink`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_ids: [txId] })
@@ -380,7 +380,7 @@ export default function TransactionsView({
     const count = selectedTxIds.length;
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/transactions/batch-update-category', {
+      const res = await authFetch('/api/transactions/batch-update-category', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -415,7 +415,7 @@ export default function TransactionsView({
     const count = selectedTxIds.length;
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/transactions/batch-update-reimbursable', {
+      const res = await authFetch('/api/transactions/batch-update-reimbursable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -452,7 +452,7 @@ export default function TransactionsView({
     const count = selectedTxIds.length;
     setBatchOperating(true);
     try {
-      const res = await fetch('/api/transactions/batch-delete', {
+      const res = await authFetch('/api/transactions/batch-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -486,7 +486,7 @@ export default function TransactionsView({
 
     if (newCat === 'Traspaso entre cuentas') {
       try {
-        const res = await fetch('/api/transactions/find-transfer-pair', {
+        const res = await authFetch('/api/transactions/find-transfer-pair', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ transaction_id: tx.id })
@@ -511,7 +511,7 @@ export default function TransactionsView({
 
     // 2. Buscar en segundo plano si hay similares para mostrar recomendación inferior no intrusiva
     try {
-      const res = await fetch('/api/transactions/find-similar', {
+      const res = await authFetch('/api/transactions/find-similar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transaction_id: tx.id, new_category: newCat })
@@ -547,7 +547,7 @@ export default function TransactionsView({
     }
 
     try {
-      const res = await fetch('/api/transactions/batch-update-category', {
+      const res = await authFetch('/api/transactions/batch-update-category', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

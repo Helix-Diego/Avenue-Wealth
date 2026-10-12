@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   X, 
   ArrowLeftRight, 
@@ -33,7 +34,7 @@ export default function TransferPairModal({
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/transactions/pair-transfers', {
+      const res = await authFetch('/api/transactions/pair-transfers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

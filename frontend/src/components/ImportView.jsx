@@ -24,6 +24,7 @@ import {
   Wand2,
   Settings
 } from 'lucide-react';
+import { authFetch } from '../supabaseClient';
 
 const REAL_SANTANDER_SAMPLE = `,,CUENTA ONLINE SANTANDER,DATE,,
 ,,ES13 0049 5525 5323 1245 0000,28/09/2026 | 20:54:22,,
@@ -162,8 +163,8 @@ export default function ImportView({ onUploadComplete, setActiveTab, setSelected
   const fetchBanksAndAccounts = async () => {
     try {
       const [banksRes, accsRes] = await Promise.all([
-        fetch('/api/settings/banks'),
-        fetch('/api/accounts')
+        authFetch('/api/settings/banks'),
+        authFetch('/api/accounts')
       ]);
       const banksData = await banksRes.json();
       const accsData = await accsRes.json();
@@ -265,7 +266,7 @@ export default function ImportView({ onUploadComplete, setActiveTab, setSelected
       formData.append('file', currentItem.file);
       formData.append('account', currentItem.account || 'Auto');
 
-      const res = await fetch('/api/upload', {
+      const res = await authFetch('/api/upload', {
         method: 'POST',
         body: formData,
       });

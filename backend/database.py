@@ -200,13 +200,16 @@ def init_db():
     # 3. Stock Portfolio Positions (Synced from Google Sheet)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS portfolio_stocks (
-        symbol TEXT PRIMARY KEY,
+        symbol TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
         shares REAL NOT NULL,
         avg_price REAL NOT NULL,
         currency TEXT DEFAULT 'USD',
         current_price REAL DEFAULT 0.0,
         price_change_24h REAL DEFAULT 0.0,
-        last_updated TEXT
+        last_updated TEXT,
+        name TEXT DEFAULT '',
+        PRIMARY KEY (symbol, user_id)
     )
     """)
 
@@ -214,6 +217,7 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS fund_contributions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
         date TEXT NOT NULL,
         shares REAL NOT NULL,
         invested_amount REAL NOT NULL,
@@ -237,8 +241,10 @@ def init_db():
     # 5. User Settings & API Keys
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS user_settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
+        key TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+        value TEXT NOT NULL,
+        PRIMARY KEY (key, user_id)
     )
     """)
 
@@ -269,14 +275,17 @@ def init_db():
     # 8. Bank Accounts & Balance Tracking (up to latest import date)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS bank_accounts (
-        account_name TEXT PRIMARY KEY,
+        account_name TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
         account_type TEXT DEFAULT 'checking',
         current_balance REAL DEFAULT 0.0,
         currency TEXT DEFAULT 'EUR',
         last_transaction_date TEXT,
         last_imported_at TEXT,
         is_credit_card INTEGER DEFAULT 0,
-        notes TEXT
+        notes TEXT,
+        initial_balance REAL DEFAULT 0.0,
+        PRIMARY KEY (account_name, user_id)
     )
     """)
 
@@ -359,6 +368,57 @@ def init_db():
             cursor.execute(f"ALTER TABLE {tbl} ADD COLUMN user_id TEXT DEFAULT '00000000-0000-0000-0000-000000000000'")
         except sqlite3.OperationalError:
             pass
+
+    # Migrate legacy single-column primary keys to composite primary keys (column, user_id)
+    def _migrate_to_composite_pk(tbl_name, create_sql, target_cols):
+        try:
+            info = cursor.execute(f"PRAGMA table_info({tbl_name})").fetchall()
+            has_user_id_pk = any(c[1] == "user_id" and c[5] > 0 for c in info)
+            if not has_user_id_pk:
+                temp = f"{tbl_name}_legacy_migration"
+                cursor.execute(f"ALTER TABLE {tbl_name} RENAME TO {temp}")
+                cursor.execute(create_sql)
+                temp_cols = [c[1] for c in cursor.execute(f"PRAGMA table_info({temp})").fetchall()]
+                common = [c for c in target_cols if c in temp_cols]
+                cols_str = ", ".join(common)
+                cursor.execute(f"INSERT OR IGNORE INTO {tbl_name} ({cols_str}) SELECT {cols_str} FROM {temp}")
+                cursor.execute(f"DROP TABLE {temp}")
+        except Exception as e:
+            print(f"Composite PK migration notice for {tbl_name}: {e}")
+
+    _migrate_to_composite_pk('bank_accounts', '''CREATE TABLE bank_accounts (
+        account_name TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+        account_type TEXT DEFAULT 'checking',
+        current_balance REAL DEFAULT 0.0,
+        currency TEXT DEFAULT 'EUR',
+        last_transaction_date TEXT,
+        last_imported_at TEXT,
+        is_credit_card INTEGER DEFAULT 0,
+        notes TEXT,
+        initial_balance REAL DEFAULT 0.0,
+        PRIMARY KEY (account_name, user_id)
+    )''', ['account_name', 'user_id', 'account_type', 'current_balance', 'currency', 'last_transaction_date', 'last_imported_at', 'is_credit_card', 'notes', 'initial_balance'])
+
+    _migrate_to_composite_pk('portfolio_stocks', '''CREATE TABLE portfolio_stocks (
+        symbol TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+        shares REAL NOT NULL,
+        avg_price REAL NOT NULL,
+        currency TEXT DEFAULT 'USD',
+        current_price REAL DEFAULT 0.0,
+        price_change_24h REAL DEFAULT 0.0,
+        last_updated TEXT,
+        name TEXT DEFAULT '',
+        PRIMARY KEY (symbol, user_id)
+    )''', ['symbol', 'user_id', 'shares', 'avg_price', 'currency', 'current_price', 'price_change_24h', 'last_updated', 'name'])
+
+    _migrate_to_composite_pk('user_settings', '''CREATE TABLE user_settings (
+        key TEXT NOT NULL,
+        user_id TEXT NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+        value TEXT NOT NULL,
+        PRIMARY KEY (key, user_id)
+    )''', ['key', 'user_id', 'value'])
 
     # Performance indexes for tenant-isolated queries
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_tx_user_date ON transactions(user_id, date)")

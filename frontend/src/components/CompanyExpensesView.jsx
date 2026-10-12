@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authFetch } from '../supabaseClient';
 import { 
   Briefcase, 
   Fuel, 
@@ -36,7 +37,7 @@ export default function CompanyExpensesView({ onRefreshSummary }) {
 
   const fetchCompanyData = async () => {
     try {
-      const res = await fetch('/api/company-expenses');
+      const res = await authFetch('/api/company-expenses');
       const json = await res.json();
       setData(json);
     } catch (e) {
@@ -52,7 +53,7 @@ export default function CompanyExpensesView({ onRefreshSummary }) {
 
   const handleSettleAll = async () => {
     try {
-      await fetch('/api/company-expenses/settle-all', { method: 'POST' });
+      await authFetch('/api/company-expenses/settle-all', { method: 'POST' });
       await fetchCompanyData();
       if (onRefreshSummary) onRefreshSummary();
     } catch (e) {
@@ -63,7 +64,7 @@ export default function CompanyExpensesView({ onRefreshSummary }) {
   const handleToggleStatus = async (txId, currentStatus) => {
     const newStatus = currentStatus === 'reimbursed' ? 'pending' : 'reimbursed';
     try {
-      await fetch(`/api/transactions/${txId}`, {
+      await authFetch(`/api/transactions/${txId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reimbursement_status: newStatus })
@@ -77,7 +78,7 @@ export default function CompanyExpensesView({ onRefreshSummary }) {
 
   const handleConvertToPersonal = async (txId, chosenCategory) => {
     try {
-      await fetch(`/api/transactions/${txId}`, {
+      await authFetch(`/api/transactions/${txId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
